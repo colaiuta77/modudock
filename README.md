@@ -10,7 +10,7 @@ ModuDock은 Git 저장소에서 플러그인을 설치하고 작업과 스케줄
 - Celery 작업 실행, 진행률, 협력형 취소 요청, 구조화 로그, SSE 상태 스트림.
 - SQLite 기반 스케줄 CRUD와 DB lease 단일 활성 스케줄러.
 - JSON Schema 기반 작업 입력 폼과 플러그인 설정 검증.
-- React 관리 콘솔과 샘플 플러그인.
+- FastAPI 이미지에 통합된 React 관리 콘솔과 샘플 플러그인.
 
 ## 빠른 시작
 
@@ -27,7 +27,7 @@ docker compose up --build
 ```
 
 - 관리 콘솔은 `http://localhost:7438`에서 엽니다.
-- API 문서는 `http://localhost:8000/docs`에서 확인합니다.
+- API 문서는 `http://localhost:7438/docs`에서 확인합니다.
 - 초기 계정 이름은 `.env`의 `MODUDOCK_ADMIN_USERNAME` 값입니다.
 
 ## 샘플 플러그인 사용
@@ -95,7 +95,7 @@ npm run dev
 
 ## 보안 경계와 알려진 제한
 
-- API와 웹 컨테이너에는 Docker socket이나 호스트 루트를 마운트하지 않습니다.
+- API 컨테이너에는 Docker socket이나 호스트 루트를 마운트하지 않습니다.
 - 플러그인은 별도 worker 컨테이너의 subprocess에서 실행되지만, MVP에서는 작업별 Linux namespace, seccomp, 네트워크 정책까지 적용하지 않았습니다. 신뢰할 수 없는 플러그인의 완전한 샌드박스는 후속 runner agent로 분리해야 합니다.
 - 실행 중 취소는 프로세스 강제 종료가 아닌 협력형 요청입니다. 명령이 반환되면 결과를 폐기하고 `cancelled`로 확정합니다.
 - 설치 시 `requirements.txt`를 전용 venv에 설치하지만, task command가 해당 venv 실행 파일을 사용하려면 manifest에 명시해야 합니다.

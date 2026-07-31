@@ -2,6 +2,7 @@
 import asyncio
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -9,6 +10,7 @@ from croniter import croniter
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from jsonschema import ValidationError as JsonSchemaError
 from jsonschema import validate as validate_json
 from sqlalchemy import desc, select
@@ -377,3 +379,11 @@ def list_logs(
         }
         for entry in entries
     ]
+
+
+def mount_frontend(application: FastAPI, static_dir: Path) -> None:
+    if static_dir.is_dir():
+        application.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
+
+
+mount_frontend(app, Path(__file__).resolve().parent.parent / "static")

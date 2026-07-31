@@ -2,11 +2,10 @@
 
 ```text
 Browser
-  └─ Web UI
-      └─ FastAPI ── SQLite volume
-           └─ Redis broker/AOF
-                ├─ Celery worker ── plugin release volume
-                └─ Scheduler ── SQLite lease
+  └─ FastAPI + React static UI ── SQLite volume
+       └─ Redis broker/AOF
+            ├─ Celery worker ── plugin release volume
+            └─ Scheduler ── SQLite lease
 ```
 
 ## 플러그인 설치 상태 전이
@@ -27,6 +26,7 @@ Browser
 3. API health check가 성공한 뒤 worker와 scheduler가 시작된다.
 
 SQLite에 대한 동시 DDL 경쟁을 막기 위해 worker와 scheduler는 데이터베이스 bootstrap을 실행하지 않습니다.
+React 정적 파일은 API 이미지의 `/app/static`에 포함되며 FastAPI가 같은 포트에서 제공합니다.
 
 ## 후속 격리 모델
 

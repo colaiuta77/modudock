@@ -1,5 +1,5 @@
 // 인증 토큰을 포함해 ModuDock API를 호출하는 작은 클라이언트다.
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 export type Plugin = {
   id: string;

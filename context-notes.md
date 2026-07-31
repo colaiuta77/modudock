@@ -17,3 +17,5 @@
 - 로컬 검증을 위해 Docker Desktop 4.84.0, Docker CLI·Engine 29.6.2, Compose 5.3.1을 설치했다. 구형 inbox WSL로 backend가 시작되지 않아 Store 기반 WSL 2.7.11.0도 설치했다.
 - API·worker·scheduler가 동시에 Alembic을 실행하면 SQLite DDL 경쟁이 발생한다. 마이그레이션과 관리자 bootstrap은 단일 API 컨테이너만 담당하고 worker·scheduler는 API health 이후 시작하도록 책임을 분리했다.
 - 실제 빈 Docker 볼륨 기동에서 API·Redis healthy, worker Celery ready, scheduler running, API·웹 HTTP 200을 확인했다. Celery root 실행 경고는 후속 컨테이너 권한 강화 항목으로 남긴다.
+- 사용자 요청에 따라 별도 Nginx web 컨테이너를 제거했다. React는 Node 빌드 stage에서 생성해 API 이미지에 포함하고 FastAPI가 7438 포트에서 UI와 API를 함께 제공한다.
+- 통합 이미지의 실제 빈 볼륨 기동에서 네 컨테이너만 생성됨을 확인했다. 7438 포트의 UI·health·API 문서가 모두 HTTP 200이었고 worker ready와 scheduler running도 확인했다.

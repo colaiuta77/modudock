@@ -36,3 +36,11 @@
 - [x] worker·scheduler가 API health 이후 시작되도록 변경.
 - [x] 빈 볼륨에서 Compose 전체 기동 검증.
 - [x] 백엔드 회귀 테스트와 수정 커밋 생성.
+
+## Web·API 컨테이너 통합
+
+- [x] React를 백엔드 Docker 이미지의 다단계 빌드로 통합.
+- [x] FastAPI 정적 파일 제공과 동일 origin API 호출 적용.
+- [x] Compose의 별도 web 서비스 제거.
+- [x] 백엔드·프런트엔드 및 실제 Compose 기동 검증.
+- [x] 문서 갱신과 통합 커밋 생성.
