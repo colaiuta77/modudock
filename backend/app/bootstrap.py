@@ -5,6 +5,7 @@ from sqlalchemy import select
 from alembic import command
 from app.config import settings
 from app.db import SessionLocal
+from app.logging_service import write_platform_log
 from app.models import Role, User
 from app.security import hash_password
 
@@ -29,6 +30,7 @@ def main() -> None:
                     role=Role.admin,
                 )
             )
+    write_platform_log("api", "ModuDock API 초기화를 완료했습니다")
 
 
 if __name__ == "__main__":

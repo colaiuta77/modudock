@@ -7,7 +7,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import SessionLocal, get_db
-from app.logging_service import write_log
+from app.logging_service import write_log, write_platform_log
 from app.models import (
     LogEntry,
     Plugin,
@@ -65,6 +65,26 @@ Db = Annotated[Session, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(current_user)]
 Operator = Annotated[User, Depends(require_roles(Role.admin, Role.operator))]
 Admin = Annotated[User, Depends(require_roles(Role.admin))]
+
+
+@app.middleware("http")
+async def log_unhandled_http_errors(request: Request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        await asyncio.to_thread(
+            write_platform_log,
+            "api",
+            "HTTP 요청 처리 중 예외가 발생했습니다",
+            level="ERROR",
+            context={
+                "method": request.method,
+                "path": request.url.path,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+    return response
 
 
 @app.get("/healthz")

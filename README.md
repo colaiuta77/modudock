@@ -118,3 +118,7 @@ npm run dev
 ## 데이터와 로그
 
 SQLite DB는 `modudock-data`, Redis AOF는 `modudock-redis`, 플러그인 release는 `modudock-plugins` Docker volume에 보존됩니다. 모든 저장 로그는 `plugin_id`, `task_id`, `run_id`, `user_id`, `timestamp` 공통 필드를 가집니다.
+
+전체 로그에는 사용자 감사 이벤트와 플러그인·작업 로그뿐 아니라 ModuDock API 초기화, worker 준비·종료, scheduler 시작·오류와 처리되지 않은 API 예외도 기록됩니다. 화면에서는 `MODUDOCK/API`, `MODUDOCK/WORKER`, `MODUDOCK/SCHEDULER` 출처로 구분합니다.
+
+Docker daemon의 원시 stdout·stderr 전체를 화면에서 직접 읽지는 않습니다. 웹/API 컨테이너에 Docker socket을 노출하지 않는 보안 경계를 유지하기 위한 결정이며, 원시 컨테이너 로그는 운영 호스트의 `docker compose logs`로 확인합니다.

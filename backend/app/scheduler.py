@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.db import SessionLocal
-from app.logging_service import write_log
+from app.logging_service import write_log, write_platform_log
 from app.models import RunState, Schedule, SchedulerLease, TaskRun
 from app.worker import run_plugin_task
 
@@ -90,10 +90,20 @@ def dispatch_due() -> None:
 
 
 def main() -> None:
-    while True:
-        if acquire_lease():
-            dispatch_due()
-        time.sleep(settings.scheduler_poll_seconds)
+    write_platform_log("scheduler", "ModuDock scheduler를 시작했습니다")
+    try:
+        while True:
+            if acquire_lease():
+                dispatch_due()
+            time.sleep(settings.scheduler_poll_seconds)
+    except Exception as exc:
+        write_platform_log(
+            "scheduler",
+            "ModuDock scheduler가 오류로 종료되었습니다",
+            level="ERROR",
+            context={"error_type": type(exc).__name__, "error": str(exc)},
+        )
+        raise
 
 
 if __name__ == "__main__":

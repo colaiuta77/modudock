@@ -34,3 +34,8 @@
 - Tabler Core는 Bootstrap 기반 CSS와 JavaScript를 함께 제공하지만 ModuDock은 React가 상태를 관리한다. 향후 확장을 위해 공식 CSS만 기반 계층으로 사용하고 Bootstrap의 imperative JavaScript는 로드하지 않는다.
 - 전역 충돌을 줄이기 위해 import 순서는 Tabler Core CSS 다음에 ModuDock `styles.css`로 고정한다. 현재 화면은 ModuDock 오버라이드가 유지되고 새 화면은 Tabler 컴포넌트 클래스를 점진적으로 사용할 수 있다.
 - `@tabler/core` 1.4.0 적용 후 프런트 빌드와 Compose API 이미지 빌드가 통과했다. 로그인된 설정·사용자 계정 화면과 390×844 설정 화면을 확인했으며 모바일 문서 가로 넘침은 없었다.
+- 전체 로그는 기존에도 사용자·플러그인·작업의 감사 이벤트를 SQLite에 저장했지만 API·worker·scheduler 자체 생명주기 로그는 남기지 않아 새 설치 직후 빈 화면으로 보였다.
+- Docker socket이나 호스트 로그 경로를 API에 노출하는 방식은 기존 보안 경계를 위반한다. 대신 각 ModuDock 프로세스가 주요 시작·종료·오류 이벤트를 짧은 DB 트랜잭션으로 직접 저장하고 `context.component`로 출처를 구분한다.
+- HTTP 401·404 같은 예상 응답을 모두 플랫폼 로그로 저장하면 만료된 브라우저 탭의 자동 갱신만으로 로그가 급증한다. 미처리 서버 예외만 ERROR로 저장하고 정상적인 4xx 응답은 저장하지 않는다.
+- 사이드바 정렬 불일치는 후순위 공통 `button` 규칙의 `justify-content: center`가 메뉴 버튼에도 적용된 것이 원인이었다. 사이드바 범위에서 왼쪽 정렬을 명시하고 하위 메뉴에만 16px 들여쓰기를 적용했다.
+- 실제 Compose 재기동 후 `MODUDOCK/API`, `MODUDOCK/WORKER`, `MODUDOCK/SCHEDULER` 시작 로그를 전체 로그 화면에서 확인했다. 390px 화면의 문서 가로 넘침은 없었고 API 재기동 이후 반복 4xx 로그가 추가되지 않음을 DB 최신 ID로 확인했다.

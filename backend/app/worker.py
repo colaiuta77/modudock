@@ -8,16 +8,27 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from celery import Celery
+from celery.signals import worker_ready, worker_shutdown
 from sqlalchemy import select
 
 from app.config import settings
 from app.db import SessionLocal
-from app.logging_service import write_log
+from app.logging_service import write_log, write_platform_log
 from app.manifest import load_manifest
 from app.models import Plugin, PluginRelease, PluginState, RunState, TaskRun
 
 celery_app = Celery("modudock", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.update(task_track_started=True, task_serializer="json", result_serializer="json")
+
+
+@worker_ready.connect
+def log_worker_ready(**_kwargs) -> None:
+    write_platform_log("worker", "ModuDock worker가 준비되었습니다")
+
+
+@worker_shutdown.connect
+def log_worker_shutdown(**_kwargs) -> None:
+    write_platform_log("worker", "ModuDock worker가 종료되었습니다")
 
 
 def run_checked(argv: list[str], cwd: Path, timeout: int = 300) -> subprocess.CompletedProcess[str]:

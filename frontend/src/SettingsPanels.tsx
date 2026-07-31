@@ -454,7 +454,14 @@ export function LogsSettings({ token, notify }: CommonProps) {
           <div className={`log-line ${entry.level.toLowerCase()}`} key={entry.id}>
             <time>{new Date(entry.timestamp).toLocaleString("ko-KR")}</time>
             <b>{entry.level}</b>
-            <span className="log-source">{entry.plugin_id || "SYSTEM"}{entry.task_id ? ` / ${entry.task_id}` : ""}</span>
+            <span className="log-source">
+              {entry.plugin_id || (
+                typeof entry.context.component === "string"
+                  ? `MODUDOCK/${entry.context.component.toUpperCase()}`
+                  : "MODUDOCK"
+              )}
+              {entry.task_id ? ` / ${entry.task_id}` : ""}
+            </span>
             <span>{entry.message}</span>
             {entry.run_id && <code>{entry.run_id.slice(0, 8)}</code>}
           </div>

@@ -103,6 +103,17 @@ nav button,
   transition: background-color .15s, color .15s;
 }
 
+nav > button,
+.nav-group > button,
+.subnav > button {
+  justify-content: flex-start;
+}
+
+nav button > span:not(.nav-icon, .nav-suffix) {
+  min-width: 0;
+  line-height: 20px;
+}
+
 nav button:hover,
 .logout:hover {
   background: var(--surface-muted);
@@ -139,14 +150,14 @@ nav button.active {
 
 .nav-group { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .nav-parent::after { display: none; }
-.subnav { display: grid; gap: 2px; padding: 5px 0 2px 15px; }
-.subnav button { min-height: 38px; padding-block: 7px; font-size: 13px; }
+.subnav { display: grid; gap: 2px; padding: 5px 0 2px; }
+.subnav button { min-height: 38px; padding: 7px 11px 7px 27px; font-size: 13px; }
 .subnav button::before {
   content: "";
   width: 1px;
   height: 100%;
   position: absolute;
-  left: -8px;
+  left: 7px;
   background: var(--border);
 }
 .subnav button { position: relative; }
