@@ -39,3 +39,6 @@
 - HTTP 401·404 같은 예상 응답을 모두 플랫폼 로그로 저장하면 만료된 브라우저 탭의 자동 갱신만으로 로그가 급증한다. 미처리 서버 예외만 ERROR로 저장하고 정상적인 4xx 응답은 저장하지 않는다.
 - 사이드바 정렬 불일치는 후순위 공통 `button` 규칙의 `justify-content: center`가 메뉴 버튼에도 적용된 것이 원인이었다. 사이드바 범위에서 왼쪽 정렬을 명시하고 하위 메뉴에만 16px 들여쓰기를 적용했다.
 - 실제 Compose 재기동 후 `MODUDOCK/API`, `MODUDOCK/WORKER`, `MODUDOCK/SCHEDULER` 시작 로그를 전체 로그 화면에서 확인했다. 390px 화면의 문서 가로 넘침은 없었고 API 재기동 이후 반복 4xx 로그가 추가되지 않음을 DB 최신 ID로 확인했다.
+- Synology 변경 파일 배포 대상은 FTP 화면 기준 `/docker/ModuDock`이며 Docker 재빌드는 사용자가 직접 수행한다. 접속 자격 증명은 저장소나 작업 문서에 기록하지 않고, 2222 포트가 SFTP/SSH로 확인될 때만 전송한다.
+- NAS 실제 경로는 `/volume1/docker/ModuDock`이고 `.git`은 없다. 핵심 소스 7개의 SHA-256이 모두 로컬 `c63d2fe` blob과 일치해 배포 기준을 `c63d2fe`로 식별했으며, 업로드 소스는 작업 트리가 아닌 `daa46da` 커밋에서 추출한다.
+- `c63d2fe..daa46da`의 수정 파일 13개만 SFTP 가상 경로 `/docker/ModuDock`에 전송했다. 원격 SHA-256이 `daa46da` 추출본과 13개 모두 일치했으며 `.env`, 데이터·플러그인 경로, 의존성·빌드 산출물은 건드리지 않고 Docker 재빌드도 수행하지 않았다.
