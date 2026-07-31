@@ -1,9 +1,10 @@
 # 환경 변수에서 ModuDock 런타임 설정을 읽는다.
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -15,7 +16,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/modudock.db"
     redis_url: str = "redis://localhost:6379/0"
     plugin_root: Path = Path("./plugins")
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:8080"]
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:5173",
+        "http://localhost:8080",
+    ]
     access_token_minutes: int = 60
     scheduler_poll_seconds: int = 5
     scheduler_lease_seconds: int = 20

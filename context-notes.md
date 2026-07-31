@@ -12,3 +12,4 @@
 - Git transport는 command helper 악용을 막기 위해 HTTPS와 SSH만 허용한다.
 - MVP 취소는 협력형으로 구현한다. 실행 중 프로세스가 반환된 뒤 취소 요청을 확인하고 결과를 폐기한다.
 - plugin worker는 API와 분리했지만 작업별 커널 수준 sandbox는 아직 적용하지 않았다. 후속 runner agent의 명시적 보안 요구사항으로 문서화했다.
+- `pydantic-settings`는 복합 타입 환경 변수를 validator 실행 전에 JSON으로 디코딩한다. 문서화된 쉼표 구분 CORS 값을 유지하기 위해 해당 필드에 `NoDecode`를 적용하고 validator가 직접 분리하도록 했다.
