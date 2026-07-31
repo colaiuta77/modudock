@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/modudock.db"
     redis_url: str = "redis://localhost:6379/0"
     plugin_root: Path = Path("./plugins")
+    plugin_data_root: Path = Path("./plugin-data")
+    bundled_plugin_root: Path = Path("./bundled-plugins")
     cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:5173",
         "http://localhost:7438",

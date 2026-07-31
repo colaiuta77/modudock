@@ -15,6 +15,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY plugins /app/bundled-plugins
+RUN python -m venv /app/bundled-plugins/local-mart-sale/.venv \
+    && /app/bundled-plugins/local-mart-sale/.venv/bin/pip install \
+        --no-cache-dir -r /app/bundled-plugins/local-mart-sale/requirements.txt
 COPY backend /app
 COPY --from=web-build /web/dist /app/static
 RUN chmod +x /app/entrypoint.sh

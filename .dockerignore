@@ -8,5 +8,6 @@ backend/tests
 backend/**/__pycache__
 frontend/node_modules
 frontend/dist
-plugins
+plugins/**/.venv
+plugins/**/__pycache__
 data

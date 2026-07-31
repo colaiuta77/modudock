@@ -5,9 +5,13 @@ x-backend: &backend
     context: .
     dockerfile: backend/Dockerfile
   env_file: .env
+  environment:
+    MODUDOCK_PLUGIN_DATA_ROOT: /plugin-data
+    MODUDOCK_BUNDLED_PLUGIN_ROOT: /app/bundled-plugins
   volumes:
     - modudock-data:/data
     - modudock-plugins:/plugins
+    - modudock-plugin-data:/plugin-data
   depends_on:
     redis:
       condition: service_healthy
@@ -56,4 +60,5 @@ services:
 volumes:
   modudock-data:
   modudock-plugins:
+  modudock-plugin-data:
   modudock-redis:

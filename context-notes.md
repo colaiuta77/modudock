@@ -46,3 +46,14 @@
 - API·worker·scheduler는 실행 명령만 다르고 같은 파일 시스템이 필요하므로 하나의 `ghcr.io/colaiuta77/modudock` 이미지를 공유한다. 릴리스는 `v*` 태그에서만 게시하고 일반 브랜치 푸시는 빌드 검증만 수행한다.
 - Actions는 현재 공식 문서의 `checkout@v6`, Docker `login/setup-qemu/setup-buildx@v4`, `metadata@v6`, `build-push@v7` 조합을 사용한다. `GITHUB_TOKEN`의 `packages: write`만으로 GHCR에 게시하고 BuildKit GHA 캐시, provenance와 SBOM을 이미지에 포함한다.
 - 배포 Compose 렌더링에서 GHCR 이미지 3개와 Redis 이미지가 확인됐고 Buildx의 AMD64·ARM64 Dockerfile check는 통과했다. 외부 actionlint 컨테이너의 저장소 전체 마운트는 보안상 실행하지 않고 PyYAML 기반 구조 검증으로 필수 권한·액션·플랫폼을 확인했다.
+- `local-mart-sale`은 ModuDock 저장소의 `plugins/local-mart-sale` 하위 프로젝트로 구현한다. 단일 매장 MVP를 기본값으로 두되 데이터 모델에는 `store_id`를 포함해 다점포 확장을 막지 않는다.
+- Android 조회 요청은 Celery 작업으로 처리하지 않는다. 활성 릴리스의 manifest가 허용한 리소스 명령만 ModuDock API가 별도 subprocess로 실행하며, 플러그인 코드를 API 프로세스에 import하지 않는다.
+- 플러그인 데이터는 릴리스 디렉터리와 분리된 `/plugin-data/{plugin_id}`에 저장한다. 설치·업데이트·롤백으로 실행 코드가 교체되어도 SQLite 데이터는 유지한다.
+- 관리자 리소스 API는 ModuDock operator 이상 권한을 사용하고 공개 리소스 API는 manifest에 `public: true`로 선언된 GET 작업만 허용한다. 임의 경로나 임의 명령을 요청에서 받지 않는다.
+- 할인 게시의 기준 데이터는 공개 API가 반환하는 SQLite 레코드다. FCM에는 행사 ID와 버전 등 갱신 신호만 넣고 Android 앱이 최신 데이터를 다시 조회하도록 한다.
+- 실제 Firebase 자격 증명이 없는 로컬 환경에서는 알림을 비활성화 상태로 기록한다. 서비스 계정 JSON은 저장소나 플러그인 DB에 저장하지 않고 런타임 파일 경로로만 전달하는 방향을 유지한다.
+- 리소스 실행은 활성 manifest에 고정된 argv만 허용하며 요청자가 command를 전달할 수 없다. subprocess 환경 변수도 PATH·locale 등 최소 실행 환경과 해당 플러그인 설정·데이터 경로만 전달해 플랫폼 관리자 비밀번호와 JWT 비밀키가 상속되지 않게 했다.
+- 공식 번들 플러그인은 이미지의 `/app/bundled-plugins`에서 소스 digest를 계산해 일반 release 경로로 복사·등록한다. 관리자가 비활성화한 번들 플러그인은 API 재시작 시 강제로 다시 활성화하지 않는다.
+- `local-mart-sale` 관리 화면은 1265px 데스크톱에서 문서 가로 넘침 없이 편집기와 이력·알림 설정이 정렬됐다. 실제 텍스트 두 행을 변환해 편집 행 두 개가 생성됨을 확인했고 브라우저 콘솔 오류는 없었다.
+- 390×844 모바일 검증에서 실제 문서 viewport 375px과 scroll width 375px이 일치했다. 할인 편집기는 단일 열 301px로 줄어들어 가로 넘침이 없었다.
+- 실제 로컬 Compose를 새 이미지로 재기동해 API·Redis healthy, worker ready, scheduler 실행과 `local-mart-sale` active 자동 등록을 확인했다. 새 `modudock-plugin-data` 볼륨은 릴리스 볼륨과 별도로 생성됐다.

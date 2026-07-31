@@ -1,0 +1,59 @@
+schema_version: 1
+id: local-mart-sale
+name: 동네마트 당일 세일
+version: 0.1.0
+platform: ">=0.1,<1"
+menus:
+  - id: daily-sales
+    title: 오늘의 세일
+workspace:
+  type: daily-sale-manager
+  resource: sales
+resources:
+  - id: sales
+    command: [python, resource.py]
+    public_methods: [GET]
+    timeout_seconds: 30
+tasks:
+  - id: send-notification
+    title: 할인 게시 푸시 알림
+    command: [python, notify.py]
+    input_schema:
+      type: object
+      properties:
+        sale_batch_id:
+          type: string
+        version:
+          type: integer
+      required: [sale_batch_id, version]
+settings_schema:
+  type: object
+  properties:
+    store_id:
+      type: string
+      title: 매장 ID
+      default: main
+    store_name:
+      type: string
+      title: 매장 이름
+      default: 우리동네마트
+    fcm_enabled:
+      type: boolean
+      title: FCM 푸시 사용
+      default: false
+    fcm_topic:
+      type: string
+      title: FCM 주제
+      default: mart-main
+    fcm_service_account_file:
+      type: string
+      title: 서비스 계정 파일 경로
+      default: ""
+  additionalProperties: false
+permissions:
+  - storage:plugin
+  - network:fcm
+dependencies: []
+health_check:
+  command: [python, health.py]
+  timeout_seconds: 10

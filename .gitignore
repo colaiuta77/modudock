@@ -5,7 +5,9 @@ __pycache__/
 .ruff_cache/
 *.pyc
 data/
-plugins/
+plugins/*
+!plugins/local-mart-sale/
+!plugins/local-mart-sale/**
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo

@@ -42,6 +42,7 @@ import {
   SettingsHome,
   UsersSettings,
 } from "./SettingsPanels";
+import { LocalMartSaleWorkspace } from "./LocalMartSaleWorkspace";
 
 type SettingsView =
   | "settings"
@@ -344,6 +345,9 @@ function App() {
           <PluginWorkspace
             plugin={selectedPlugin}
             manifest={manifests[selectedPlugin.id]}
+            token={token}
+            canManage={currentUser.role !== "viewer"}
+            notify={notify}
             onRun={async (taskName, input) => {
               try {
                 await api(`/api/plugins/${selectedPlugin.id}/tasks/${taskName}/runs`, token, {
@@ -484,10 +488,16 @@ function Overview({
 function PluginWorkspace({
   plugin,
   manifest,
+  token,
+  canManage,
+  notify,
   onRun,
 }: {
   plugin: Plugin;
   manifest?: Manifest;
+  token: string;
+  canManage: boolean;
+  notify: (message: string) => void;
   onRun: (taskName: string, input: Record<string, unknown>) => Promise<void>;
 }) {
   return (
@@ -499,7 +509,14 @@ function PluginWorkspace({
         </div>
         <span className={`badge ${plugin.state}`}>{plugin.state}</span>
       </div>
-      {!manifest?.tasks?.length ? (
+      {manifest?.workspace?.type === "daily-sale-manager" ? (
+        <LocalMartSaleWorkspace
+          token={token}
+          canManage={canManage}
+          resource={manifest.workspace.resource}
+          notify={notify}
+        />
+      ) : !manifest?.tasks?.length ? (
         <EmptyState>이 플러그인에는 실행 가능한 작업이 선언되지 않았습니다.</EmptyState>
       ) : (
         <div className="task-grid">

@@ -8,6 +8,8 @@ os.environ["MODUDOCK_DATABASE_URL"] = f"sqlite:///{(TEST_ROOT / 'test.db').as_po
 os.environ["MODUDOCK_SECRET_KEY"] = "test-secret-key-at-least-32-bytes-long"
 os.environ["MODUDOCK_ADMIN_PASSWORD"] = "test-password"
 os.environ["MODUDOCK_PLUGIN_ROOT"] = str(TEST_ROOT / "plugins")
+os.environ["MODUDOCK_PLUGIN_DATA_ROOT"] = str(TEST_ROOT / "plugin-data")
+os.environ["MODUDOCK_BUNDLED_PLUGIN_ROOT"] = str(TEST_ROOT / "bundled-plugins")
 
 import pytest
 from fastapi.testclient import TestClient

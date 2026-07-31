@@ -15,6 +15,7 @@ ModuDock은 Git 저장소에서 플러그인을 설치하고 작업과 스케줄
 - manifest 메뉴의 표시 이름, 노출 여부, 사이드바 순서 편집.
 - 첨부 테마 토큰과 Tabler UI를 반영한 밝은 관리 콘솔, 공식 Tabler Icons 기반 내비게이션.
 - FastAPI 이미지에 통합된 React 관리 콘솔과 샘플 플러그인.
+- 번들 `local-mart-sale` 플러그인의 할인 초안·게시·이력, Android 공개 API와 FCM 주제 알림.
 
 ## UI 기반
 
@@ -94,6 +95,19 @@ tasks:
 
 작업은 JSON을 표준 입력으로 받고 JSON 객체를 표준 출력으로 반환해야 합니다. 명령은 shell 문자열이 아닌 argv 배열로 선언합니다.
 
+## 동네마트 당일 세일 플러그인
+
+`plugins/local-mart-sale`은 이미지에 번들되며 새 설치의 첫 API bootstrap에서 자동 활성화됩니다. 관리 콘솔의 `오늘의 세일` 메뉴에서 품목 텍스트 변환, 표 수정, 초안 저장, 게시와 이력을 관리할 수 있습니다.
+
+Android 앱은 인증 없이 다음 읽기 전용 API를 사용합니다.
+
+```text
+GET /api/public/plugins/local-mart-sale/resources/sales/today?store_id=main
+GET /api/public/plugins/local-mart-sale/resources/sales/batches/{sale_batch_id}
+```
+
+FCM을 사용할 때는 Firebase 서비스 계정 JSON을 저장소 밖에 보관하고 API·worker 컨테이너 모두에 읽기 전용으로 마운트합니다. 플러그인 화면에는 JSON 내용이 아니라 컨테이너 내부 경로만 입력합니다. 상세 입력 형식과 Android 데이터 계약은 [`plugins/local-mart-sale/README.md`](plugins/local-mart-sale/README.md)에 있습니다.
+
 ## 로컬 백엔드 개발
 
 Python 3.14와 Redis가 필요합니다.
@@ -132,6 +146,8 @@ npm run dev
 - `GET /api/plugin-menus`, `PUT /api/plugin-menus/{plugin_id}/{menu_id}`.
 - `GET /api/plugins/{id}/manifest`.
 - `GET`, `PUT /api/plugins/{id}/settings`.
+- `GET`, `POST`, `PUT`, `DELETE /api/plugins/{id}/resources/{resource}/{path}`.
+- `GET /api/public/plugins/{id}/resources/{resource}/{path}`.
 - `GET /api/plugins/{id}/releases`.
 - `POST /api/plugins/{id}/releases/{release_id}/activate`.
 - `POST /api/plugins/{id}/tasks/{task}/runs`.
@@ -146,13 +162,13 @@ npm run dev
 - API 컨테이너에는 Docker socket이나 호스트 루트를 마운트하지 않습니다.
 - 플러그인은 별도 worker 컨테이너의 subprocess에서 실행되지만, MVP에서는 작업별 Linux namespace, seccomp, 네트워크 정책까지 적용하지 않았습니다. 신뢰할 수 없는 플러그인의 완전한 샌드박스는 후속 runner agent로 분리해야 합니다.
 - 실행 중 취소는 프로세스 강제 종료가 아닌 협력형 요청입니다. 명령이 반환되면 결과를 폐기하고 `cancelled`로 확정합니다.
-- 설치 시 `requirements.txt`를 전용 venv에 설치하지만, task command가 해당 venv 실행 파일을 사용하려면 manifest에 명시해야 합니다.
+- 설치 시 `requirements.txt`를 전용 venv에 설치하며 `python`으로 시작하는 선언 명령은 해당 venv의 Python으로 자동 실행합니다.
 - SQLite 단일 서버를 전제로 합니다. WAL, 5초 busy timeout, 짧은 transaction을 적용했습니다.
 - 파일 탐색기, 선언형 시스템 명령, 내장 터미널은 아직 포함하지 않았습니다. 이 기능은 별도 agent, 허용 경로, 재인증, 감사 로그를 전제로 추가합니다.
 
 ## 데이터와 로그
 
-SQLite DB는 `modudock-data`, Redis AOF는 `modudock-redis`, 플러그인 release는 `modudock-plugins` Docker volume에 보존됩니다. 모든 저장 로그는 `plugin_id`, `task_id`, `run_id`, `user_id`, `timestamp` 공통 필드를 가집니다.
+SQLite DB는 `modudock-data`, Redis AOF는 `modudock-redis`, 플러그인 release는 `modudock-plugins`, 플러그인 전용 데이터는 `modudock-plugin-data` Docker volume에 보존됩니다. 모든 저장 로그는 `plugin_id`, `task_id`, `run_id`, `user_id`, `timestamp` 공통 필드를 가집니다.
 
 전체 로그에는 사용자 감사 이벤트와 플러그인·작업 로그뿐 아니라 ModuDock API 초기화, worker 준비·종료, scheduler 시작·오류와 처리되지 않은 API 예외도 기록됩니다. 화면에서는 `MODUDOCK/API`, `MODUDOCK/WORKER`, `MODUDOCK/SCHEDULER` 출처로 구분합니다.
 

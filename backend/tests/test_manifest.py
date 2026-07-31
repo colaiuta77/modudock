@@ -32,3 +32,20 @@ def test_rejects_invalid_plugin_id(tmp_path: Path):
     )
     with pytest.raises(ValueError):
         load_manifest(tmp_path)
+
+
+def test_public_resource_only_accepts_get(tmp_path: Path):
+    (tmp_path / "modudock.yaml").write_text(
+        """
+id: sale-plugin
+name: Sale
+version: 1.0.0
+resources:
+  - id: sales
+    command: [python, resource.py]
+    public_methods: [POST]
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_manifest(tmp_path)

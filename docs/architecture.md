@@ -3,6 +3,7 @@
 ```text
 Browser
   └─ FastAPI + React static UI ── SQLite volume
+       ├─ declared resource subprocess ── plugin data volume
        └─ Redis broker/AOF
             ├─ Celery worker ── plugin release volume
             └─ Scheduler ── SQLite lease
@@ -27,6 +28,14 @@ Browser
 
 SQLite에 대한 동시 DDL 경쟁을 막기 위해 worker와 scheduler는 데이터베이스 bootstrap을 실행하지 않습니다.
 React 정적 파일은 API 이미지의 `/app/static`에 포함되며 FastAPI가 같은 포트에서 제공합니다.
+
+## 플러그인 리소스
+
+관리자 또는 Android 요청은 임의 명령을 지정할 수 없습니다. API는 활성 manifest에 선언된 리소스 ID와 command만 찾아 별도 subprocess로 실행합니다. 관리자 리소스는 operator 이상 역할을 요구하고, 공개 리소스는 manifest의 `public_methods`에 선언된 GET 요청만 허용합니다.
+
+리소스 subprocess에는 플랫폼 비밀 환경 변수를 상속하지 않고 플러그인 ID, 전용 데이터 디렉터리와 해당 플러그인 설정만 전달합니다. 응답이 선언된 후속 Celery 작업을 요청하면 API가 작업 이력과 공통 로그를 생성한 뒤 worker에 발행합니다.
+
+이 구조는 플러그인을 API 프로세스에 import하지 않지만 프로세스별 Linux namespace까지 제공하는 완전한 sandbox는 아닙니다.
 
 ## 후속 격리 모델
 

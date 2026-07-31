@@ -15,7 +15,8 @@ from app.config import settings
 from app.db import SessionLocal
 from app.logging_service import write_log, write_platform_log
 from app.manifest import load_manifest
-from app.models import Plugin, PluginRelease, PluginState, RunState, TaskRun
+from app.models import Plugin, PluginRelease, PluginSetting, PluginState, RunState, TaskRun
+from app.plugin_runner import plugin_environment, resolve_command
 
 celery_app = Celery("modudock", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.update(task_track_started=True, task_serializer="json", result_serializer="json")
@@ -141,13 +142,21 @@ def run_plugin_task(self, run_id: str) -> None:
         install_path = Path(release.install_path)
         input_data = run.input
         plugin_id = run.plugin_id
+        stored_settings = db.get(PluginSetting, plugin_id)
+        settings_values = stored_settings.values if stored_settings else {}
 
     try:
         completed = subprocess.run(
-            command,
+            resolve_command(command, install_path),
             cwd=install_path,
+            env=plugin_environment(
+                plugin_id,
+                settings.plugin_data_root,
+                settings_values,
+            ),
             input=json.dumps(input_data),
             text=True,
+            encoding="utf-8",
             capture_output=True,
             timeout=3600,
             check=True,

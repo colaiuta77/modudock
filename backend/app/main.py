@@ -1,6 +1,7 @@
 # ModuDock HTTP API와 실시간 작업 이벤트 스트림을 제공한다.
 import asyncio
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -9,7 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from croniter import croniter
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jsonschema import ValidationError as JsonSchemaError
 from jsonschema import validate as validate_json
@@ -32,6 +33,7 @@ from app.models import (
     TaskRun,
     User,
 )
+from app.plugin_runner import PluginExecutionError, execute_plugin_command
 from app.schemas import (
     PasswordChange,
     PasswordReset,
@@ -224,6 +226,169 @@ def plugin_manifest(plugin_id: str, _user: CurrentUser, db: Db) -> dict:
     if release is None:
         raise HTTPException(404, "활성 플러그인 릴리스를 찾을 수 없습니다")
     return release.manifest
+
+
+def declared_resource(
+    db: Session,
+    plugin_id: str,
+    resource_id: str,
+) -> tuple[PluginRelease, dict]:
+    plugin = db.get(Plugin, plugin_id)
+    release = db.get(PluginRelease, plugin.active_release_id) if plugin else None
+    if plugin is None or plugin.state != PluginState.active or release is None:
+        raise HTTPException(404, "활성 플러그인을 찾을 수 없습니다")
+    resource = next(
+        (item for item in release.manifest.get("resources", []) if item.get("id") == resource_id),
+        None,
+    )
+    if resource is None:
+        raise HTTPException(404, "선언된 플러그인 리소스를 찾을 수 없습니다")
+    return release, resource
+
+
+async def proxy_plugin_resource(
+    request: Request,
+    plugin_id: str,
+    resource_id: str,
+    resource_path: str,
+    db: Session,
+    user: User | None,
+    public: bool,
+) -> JSONResponse:
+    release, resource = declared_resource(db, plugin_id, resource_id)
+    method = request.method.upper()
+    if public and method not in resource.get("public_methods", []):
+        raise HTTPException(404, "공개된 플러그인 리소스를 찾을 수 없습니다")
+    if method not in {"GET", "POST", "PUT", "DELETE"}:
+        raise HTTPException(405, "지원하지 않는 메서드입니다")
+    if not public and method != "GET" and user and user.role == Role.viewer:
+        raise HTTPException(403, "플러그인 리소스를 변경할 권한이 없습니다")
+    body = None
+    if method in {"POST", "PUT"}:
+        raw_body = await request.body()
+        if raw_body:
+            try:
+                body = json.loads(raw_body)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(400, "요청 본문은 JSON이어야 합니다") from exc
+    stored_settings = db.get(PluginSetting, plugin_id)
+    payload = {
+        "method": method,
+        "path": f"/{resource_path.strip('/')}" if resource_path else "/",
+        "query": dict(request.query_params),
+        "body": body,
+        "context": {
+            "public": public,
+            "user_id": user.id if user else None,
+            "role": user.role.value if user else None,
+        },
+    }
+    try:
+        result = await asyncio.to_thread(
+            execute_plugin_command,
+            resource["command"],
+            Path(release.install_path),
+            payload,
+            plugin_id,
+            settings.plugin_data_root,
+            stored_settings.values if stored_settings else {},
+            resource.get("timeout_seconds", 30),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(504, "플러그인 응답 시간이 초과되었습니다") from exc
+    except PluginExecutionError as exc:
+        write_log(
+            db,
+            "플러그인 리소스 실행에 실패했습니다",
+            level="ERROR",
+            plugin_id=plugin_id,
+            user_id=user.id if user else None,
+            context={"resource_id": resource_id, "path": resource_path},
+        )
+        db.commit()
+        raise HTTPException(502, str(exc)) from exc
+
+    status = result.get("status", 200)
+    if not isinstance(status, int) or not 100 <= status <= 599:
+        raise HTTPException(502, "플러그인이 유효하지 않은 상태 코드를 반환했습니다")
+    meta = result.get("_modudock", {})
+    enqueue = meta.get("enqueue_task") if isinstance(meta, dict) else None
+    changed = not public and method in {"POST", "PUT", "DELETE"} and 200 <= status < 300
+    if changed:
+        write_log(
+            db,
+            "플러그인 리소스를 변경했습니다",
+            plugin_id=plugin_id,
+            user_id=user.id if user else None,
+            context={
+                "resource_id": resource_id,
+                "method": method,
+                "path": resource_path,
+            },
+        )
+    if enqueue and not public and 200 <= status < 300:
+        task_name = enqueue.get("task")
+        task_input = enqueue.get("input", {})
+        declared = next(
+            (item for item in release.manifest.get("tasks", []) if item.get("id") == task_name),
+            None,
+        )
+        if declared is None or not isinstance(task_input, dict):
+            raise HTTPException(502, "플러그인이 선언되지 않은 후속 작업을 요청했습니다")
+        run = TaskRun(
+            plugin_id=plugin_id,
+            task_name=task_name,
+            input=task_input,
+            user_id=user.id if user else None,
+        )
+        db.add(run)
+        db.flush()
+        queued = run_plugin_task.delay(run.id)
+        run.celery_task_id = queued.id
+        write_log(
+            db,
+            "플러그인 리소스가 후속 작업을 요청했습니다",
+            plugin_id=plugin_id,
+            task_id=task_name,
+            run_id=run.id,
+            user_id=user.id if user else None,
+        )
+    if changed or enqueue:
+        db.commit()
+    return JSONResponse(content=result.get("data"), status_code=status)
+
+
+@app.api_route(
+    "/api/plugins/{plugin_id}/resources/{resource_id}/{resource_path:path}",
+    methods=["GET", "POST", "PUT", "DELETE"],
+)
+async def plugin_resource(
+    request: Request,
+    plugin_id: str,
+    resource_id: str,
+    resource_path: str,
+    user: CurrentUser,
+    db: Db,
+) -> JSONResponse:
+    return await proxy_plugin_resource(
+        request, plugin_id, resource_id, resource_path, db, user, public=False
+    )
+
+
+@app.api_route(
+    "/api/public/plugins/{plugin_id}/resources/{resource_id}/{resource_path:path}",
+    methods=["GET"],
+)
+async def public_plugin_resource(
+    request: Request,
+    plugin_id: str,
+    resource_id: str,
+    resource_path: str,
+    db: Db,
+) -> JSONResponse:
+    return await proxy_plugin_resource(
+        request, plugin_id, resource_id, resource_path, db, None, public=True
+    )
 
 
 def declared_plugin_menus(db: Session) -> list[dict]:

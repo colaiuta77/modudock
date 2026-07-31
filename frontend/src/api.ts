@@ -73,6 +73,10 @@ export type Manifest = {
     };
   }>;
   settings_schema: Record<string, unknown>;
+  workspace?: {
+    type?: string;
+    resource?: string;
+  };
 };
 
 export async function login(username: string, password: string): Promise<string> {

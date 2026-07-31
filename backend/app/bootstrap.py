@@ -3,6 +3,7 @@ from alembic.config import Config
 from sqlalchemy import select
 
 from alembic import command
+from app.bundled_plugins import register_bundled_plugins
 from app.config import settings
 from app.db import SessionLocal
 from app.logging_service import write_platform_log
@@ -12,6 +13,7 @@ from app.security import hash_password
 
 def main() -> None:
     settings.plugin_root.mkdir(parents=True, exist_ok=True)
+    settings.plugin_data_root.mkdir(parents=True, exist_ok=True)
     if settings.database_url.startswith("sqlite"):
         database_path = settings.database_url.removeprefix("sqlite:///")
         from pathlib import Path
@@ -30,6 +32,7 @@ def main() -> None:
                     role=Role.admin,
                 )
             )
+    register_bundled_plugins()
     write_platform_log("api", "ModuDock API 초기화를 완료했습니다")
 
 
