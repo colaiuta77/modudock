@@ -1,8 +1,343 @@
-// 플러그인, 작업, 스케줄 상태를 한 화면에서 관리하는 콘솔이다.
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, login, Manifest, Plugin, TaskRun } from "./api";
+// ModuDock의 인증, 내비게이션, 작업 실행 화면을 구성하는 루트 컴포넌트
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-type View = "overview" | "plugins" | "runs" | "schedules";
+import {
+  api,
+  login,
+  Manifest,
+  Plugin,
+  PluginMenu,
+  TaskRun,
+  User,
+} from "./api";
+import {
+  LogsSettings,
+  MenuSettings,
+  PasswordSettings,
+  PluginsSettings,
+  SchedulesSettings,
+  SettingsHome,
+  UsersSettings,
+} from "./SettingsPanels";
+
+type SettingsView =
+  | "settings"
+  | "settings/plugins"
+  | "settings/schedules"
+  | "settings/users"
+  | "settings/logs"
+  | "settings/menus"
+  | "settings/password";
+type View = "overview" | "runs" | SettingsView | `plugin:${string}`;
+
+const VIEW_TITLES: Record<Exclude<View, `plugin:${string}`>, string> = {
+  overview: "개요",
+  runs: "작업 이력",
+  settings: "설정",
+  "settings/plugins": "플러그인",
+  "settings/schedules": "스케줄",
+  "settings/users": "사용자 계정",
+  "settings/logs": "전체 로그",
+  "settings/menus": "메뉴 편집",
+  "settings/password": "비밀번호 변경",
+};
+
+function App() {
+  const [token, updateToken] = useState(() => sessionStorage.getItem("modudock-token") || "");
+  const [view, setView] = useState<View>("overview");
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
+  const [runs, setRuns] = useState<TaskRun[]>([]);
+  const [pluginMenus, setPluginMenus] = useState<PluginMenu[]>([]);
+  const [manifests, setManifests] = useState<Record<string, Manifest>>({});
+  const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const notify = useCallback((message: string) => {
+    setNotice(message);
+  }, []);
+
+  const logout = useCallback(() => {
+    sessionStorage.removeItem("modudock-token");
+    updateToken("");
+    setCurrentUser(null);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const [me, pluginData, runData, menuData] = await Promise.all([
+        api<User>("/api/auth/me", token),
+        api<Plugin[]>("/api/plugins", token),
+        api<TaskRun[]>("/api/runs", token),
+        api<PluginMenu[]>("/api/plugin-menus", token),
+      ]);
+      setCurrentUser(me);
+      setPlugins(pluginData);
+      setRuns(runData);
+      setPluginMenus(menuData);
+
+      const manifestEntries = await Promise.all(
+        pluginData
+          .filter((plugin) => plugin.state === "active")
+          .map(async (plugin) => {
+            try {
+              return [
+                plugin.id,
+                await api<Manifest>(`/api/plugins/${plugin.id}/manifest`, token),
+              ] as const;
+            } catch {
+              return null;
+            }
+          }),
+      );
+      setManifests(
+        Object.fromEntries(
+          manifestEntries.filter(
+            (entry): entry is readonly [string, Manifest] => entry !== null,
+          ),
+        ),
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "데이터를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }, [notify, token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => window.clearInterval(timer);
+  }, [refresh, token]);
+
+  if (!token) {
+    return (
+      <Login
+        onLogin={(newToken) => {
+          sessionStorage.setItem("modudock-token", newToken);
+          updateToken(newToken);
+        }}
+      />
+    );
+  }
+
+  if (!currentUser) {
+    return <div className="app-loading">ModuDock를 불러오는 중입니다.</div>;
+  }
+
+  const isAdmin = currentUser.role === "admin";
+  const selectedPluginId = view.startsWith("plugin:") ? view.slice(7) : null;
+  const selectedPlugin = plugins.find((plugin) => plugin.id === selectedPluginId);
+  const selectedMenu = pluginMenus.find((menu) => menu.plugin_id === selectedPluginId);
+  const pageTitle = selectedPluginId
+    ? selectedMenu?.title ?? selectedPlugin?.name ?? selectedPluginId
+    : VIEW_TITLES[view as Exclude<View, `plugin:${string}`>];
+  const settingsOpen = view.startsWith("settings");
+  const visibleMenus = pluginMenus
+    .filter((menu) => menu.enabled)
+    .sort((left, right) => left.position - right.position || left.title.localeCompare(right.title));
+
+  return (
+    <div className="shell">
+      <aside>
+        <div className="brand">
+          <span>M</span>
+          <strong>ModuDock</strong>
+        </div>
+        <nav>
+          <NavButton active={view === "overview"} onClick={() => setView("overview")}>
+            개요
+          </NavButton>
+          <NavButton active={view === "runs"} onClick={() => setView("runs")}>
+            작업 이력
+          </NavButton>
+
+          {visibleMenus.length > 0 && <p className="nav-caption">플러그인</p>}
+          {visibleMenus.map((menu) => (
+            <NavButton
+              key={`${menu.plugin_id}:${menu.menu_id}`}
+              active={selectedPluginId === menu.plugin_id}
+              className="plugin-nav"
+              onClick={() => setView(`plugin:${menu.plugin_id}`)}
+            >
+              {menu.title}
+            </NavButton>
+          ))}
+
+          <div className={`nav-group ${settingsOpen ? "open" : ""}`}>
+            <NavButton
+              active={view === "settings"}
+              className="nav-parent"
+              onClick={() => setView("settings")}
+            >
+              설정
+            </NavButton>
+            {settingsOpen && (
+              <div className="subnav">
+                {isAdmin && (
+                  <>
+                    <NavButton
+                      active={view === "settings/plugins"}
+                      onClick={() => setView("settings/plugins")}
+                    >
+                      플러그인
+                    </NavButton>
+                    <NavButton
+                      active={view === "settings/schedules"}
+                      onClick={() => setView("settings/schedules")}
+                    >
+                      스케줄
+                    </NavButton>
+                    <NavButton
+                      active={view === "settings/users"}
+                      onClick={() => setView("settings/users")}
+                    >
+                      사용자 계정
+                    </NavButton>
+                    <NavButton
+                      active={view === "settings/menus"}
+                      onClick={() => setView("settings/menus")}
+                    >
+                      메뉴 편집
+                    </NavButton>
+                  </>
+                )}
+                <NavButton
+                  active={view === "settings/logs"}
+                  onClick={() => setView("settings/logs")}
+                >
+                  전체 로그
+                </NavButton>
+                <NavButton
+                  active={view === "settings/password"}
+                  onClick={() => setView("settings/password")}
+                >
+                  비밀번호 변경
+                </NavButton>
+              </div>
+            )}
+          </div>
+        </nav>
+        <div className="aside-footer">
+          <div className="system-state">
+            <i />
+            시스템 정상
+          </div>
+          <div className="account-summary">
+            <span>{currentUser.username}</span>
+            <small>{isAdmin ? "관리자" : "일반 계정"}</small>
+          </div>
+          <button className="logout" onClick={logout}>
+            로그아웃
+          </button>
+        </div>
+      </aside>
+
+      <main>
+        <header>
+          <div>
+            <p className="eyebrow">MODUDOCK / {pageTitle.toUpperCase()}</p>
+            <h1>{pageTitle}</h1>
+          </div>
+          <button className="ghost" disabled={loading} onClick={() => void refresh()}>
+            {loading ? "새로고침 중" : "새로고침"}
+          </button>
+        </header>
+
+        {notice && (
+          <div className="notice" onClick={() => setNotice("")}>
+            {notice}
+          </div>
+        )}
+
+        {view === "overview" && (
+          <Overview plugins={plugins} runs={runs} pluginMenus={visibleMenus} />
+        )}
+        {view === "runs" && <RunTable runs={runs} />}
+        {view === "settings" && (
+          <SettingsHome isAdmin={isAdmin} onNavigate={(next) => setView(next as View)} />
+        )}
+        {view === "settings/plugins" && isAdmin && (
+          <PluginsSettings
+            token={token}
+            manifests={manifests}
+            plugins={plugins}
+            reload={refresh}
+            notify={notify}
+            openPlugin={(pluginId) => setView(`plugin:${pluginId}`)}
+          />
+        )}
+        {view === "settings/schedules" && isAdmin && (
+          <SchedulesSettings
+            token={token}
+            plugins={plugins}
+            manifests={manifests}
+            notify={notify}
+          />
+        )}
+        {view === "settings/users" && isAdmin && (
+          <UsersSettings token={token} currentUser={currentUser} notify={notify} />
+        )}
+        {view === "settings/menus" && isAdmin && (
+          <MenuSettings
+            token={token}
+            menus={pluginMenus}
+            reload={refresh}
+            notify={notify}
+          />
+        )}
+        {view === "settings/logs" && <LogsSettings token={token} notify={notify} />}
+        {view === "settings/password" && <PasswordSettings token={token} notify={notify} />}
+        {selectedPlugin && (
+          <PluginWorkspace
+            plugin={selectedPlugin}
+            manifest={manifests[selectedPlugin.id]}
+            onRun={async (taskName, input) => {
+              try {
+                await api(`/api/plugins/${selectedPlugin.id}/tasks/${taskName}/runs`, token, {
+                  method: "POST",
+                  body: JSON.stringify({ input }),
+                });
+                notify("작업을 요청했습니다.");
+                await refresh();
+              } catch (error) {
+                notify(error instanceof Error ? error.message : "작업 요청에 실패했습니다.");
+              }
+            }}
+          />
+        )}
+        {selectedPluginId && !selectedPlugin && (
+          <EmptyState>선택한 플러그인을 찾을 수 없습니다.</EmptyState>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function NavButton({
+  active,
+  children,
+  className = "",
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  className?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className={`${active ? "active" : ""} ${className}`} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
 
 function Login({ onLogin }: { onLogin: (token: string) => void }) {
   const [username, setUsername] = useState("admin");
@@ -13,167 +348,109 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
     event.preventDefault();
     try {
       onLogin(await login(username, password));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "로그인에 실패했습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "로그인에 실패했습니다.");
     }
   }
 
   return (
-    <main className="login-shell">
-      <section className="login-card">
-        <div className="brand-mark">M</div>
-        <p className="eyebrow">AUTOMATION CONTROL PLANE</p>
-        <h1>모든 작업이<br />머무는 도크.</h1>
-        <p className="muted">플러그인을 연결하고, 예약하고, 실행 이력을 한곳에서 관리하세요.</p>
-        <form onSubmit={submit}>
-          <label>사용자 이름<input value={username} onChange={(event) => setUsername(event.target.value)} /></label>
-          <label>비밀번호<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          {error && <p className="error">{error}</p>}
-          <button className="primary" type="submit">콘솔 열기</button>
-        </form>
-      </section>
-    </main>
+    <div className="login-page">
+      <form className="login-card" onSubmit={submit}>
+        <div className="brand login-brand">
+          <span>M</span>
+          <strong>ModuDock</strong>
+        </div>
+        <p>플러그인 자동화 플랫폼</p>
+        <label>
+          사용자 이름
+          <input value={username} onChange={(event) => setUsername(event.target.value)} />
+        </label>
+        <label>
+          비밀번호
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        {error && <div className="error">{error}</div>}
+        <button type="submit">로그인</button>
+      </form>
+    </div>
   );
 }
 
-function App() {
-  const [token, setToken] = useState(() => sessionStorage.getItem("modudock-token") || "");
-  const [view, setView] = useState<View>("overview");
-  const [plugins, setPlugins] = useState<Plugin[]>([]);
-  const [runs, setRuns] = useState<TaskRun[]>([]);
-  const [manifests, setManifests] = useState<Record<string, Manifest>>({});
-  const [repository, setRepository] = useState("");
-  const [notice, setNotice] = useState("");
-
-  const refresh = useCallback(async () => {
-    if (!token) return;
-    try {
-      const [pluginData, runData] = await Promise.all([
-        api<Plugin[]>("/api/plugins", token),
-        api<TaskRun[]>("/api/runs", token),
-      ]);
-      setPlugins(pluginData);
-      setRuns(runData);
-      const manifestPairs = await Promise.all(
-        pluginData.filter((plugin) => plugin.state === "active").map(async (plugin) => [
-          plugin.id,
-          await api<Manifest>(`/api/plugins/${plugin.id}/manifest`, token),
-        ] as const),
-      );
-      setManifests(Object.fromEntries(manifestPairs));
-    } catch (reason) {
-      setNotice(reason instanceof Error ? reason.message : "데이터를 불러오지 못했습니다.");
-    }
-  }, [token]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
-
-  function acceptToken(value: string) {
-    sessionStorage.setItem("modudock-token", value);
-    setToken(value);
-  }
-
-  async function install(event: FormEvent) {
-    event.preventDefault();
-    await api("/api/plugins/install", token, {
-      method: "POST",
-      body: JSON.stringify({ repository_url: repository, ref: "HEAD" }),
-    });
-    setRepository("");
-    setNotice("설치 작업을 시작했습니다. 잠시 후 목록이 갱신됩니다.");
-  }
-
-  async function runTask(pluginId: string, taskId: string, input: Record<string, unknown>) {
-    await api(`/api/plugins/${pluginId}/tasks/${taskId}/runs`, token, {
-      method: "POST",
-      body: JSON.stringify({ input }),
-    });
-    setNotice(`${taskId} 작업을 대기열에 추가했습니다.`);
-    await refresh();
-  }
-
-  if (!token) return <Login onLogin={acceptToken} />;
-  const activeCount = plugins.filter((plugin) => plugin.state === "active").length;
-  const runningCount = runs.filter((run) => ["queued", "running", "cancel_requested"].includes(run.state)).length;
-  const successful = runs.filter((run) => run.state === "succeeded").length;
-  const successRate = runs.length ? Math.round((successful / runs.length) * 100) : 100;
-
+function Overview({
+  plugins,
+  runs,
+  pluginMenus,
+}: {
+  plugins: Plugin[];
+  runs: TaskRun[];
+  pluginMenus: PluginMenu[];
+}) {
+  const running = runs.filter((run) => ["queued", "running"].includes(run.state)).length;
   return (
-    <div className="app-shell">
-      <aside>
-        <div className="brand"><span className="brand-mark small">M</span><strong>ModuDock</strong></div>
-        <nav>
-          {([
-            ["overview", "개요"],
-            ["plugins", "플러그인"],
-            ["runs", "작업 이력"],
-            ["schedules", "스케줄"],
-          ] as Array<[View, string]>).map(([id, label]) => (
-            <button className={view === id ? "active" : ""} onClick={() => setView(id)} key={id}>{label}</button>
+    <>
+      <section className="stats">
+        <article>
+          <span>활성 플러그인</span>
+          <strong>{plugins.filter((plugin) => plugin.state === "active").length}</strong>
+        </article>
+        <article>
+          <span>표시 메뉴</span>
+          <strong>{pluginMenus.length}</strong>
+        </article>
+        <article>
+          <span>진행 중 작업</span>
+          <strong>{running}</strong>
+        </article>
+        <article>
+          <span>최근 실행</span>
+          <strong>{runs.length}</strong>
+        </article>
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">RECENT ACTIVITY</p>
+            <h2>최근 작업</h2>
+          </div>
+        </div>
+        <RunTable runs={runs.slice(0, 8)} />
+      </section>
+    </>
+  );
+}
+
+function PluginWorkspace({
+  plugin,
+  manifest,
+  onRun,
+}: {
+  plugin: Plugin;
+  manifest?: Manifest;
+  onRun: (taskName: string, input: Record<string, unknown>) => Promise<void>;
+}) {
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">PLUGIN WORKSPACE</p>
+          <h2>{plugin.name}</h2>
+        </div>
+        <span className={`badge ${plugin.state}`}>{plugin.state}</span>
+      </div>
+      {!manifest?.tasks?.length ? (
+        <EmptyState>이 플러그인에는 실행 가능한 작업이 선언되지 않았습니다.</EmptyState>
+      ) : (
+        <div className="task-grid">
+          {manifest.tasks.map((task) => (
+            <TaskLauncher key={task.id} task={task} onRun={onRun} />
           ))}
-        </nav>
-        <div className="system-state"><span className="status-dot" /> 시스템 정상</div>
-        <button className="logout" onClick={() => { sessionStorage.clear(); setToken(""); }}>로그아웃</button>
-      </aside>
-      <main className="content">
-        <header>
-          <div><p className="eyebrow">MODUDOCK / {view.toUpperCase()}</p><h1>{view === "overview" ? "오늘의 자동화" : { plugins: "플러그인", runs: "작업 이력", schedules: "스케줄" }[view]}</h1></div>
-          <button className="ghost" onClick={() => void refresh()}>새로고침</button>
-        </header>
-        {notice && <div className="notice" onClick={() => setNotice("")}>{notice}</div>}
-
-        {view === "overview" && (
-          <>
-            <section className="metric-grid">
-              <article><span>활성 플러그인</span><strong>{activeCount}</strong><small>연결됨</small></article>
-              <article><span>진행 중</span><strong>{runningCount}</strong><small>작업</small></article>
-              <article><span>성공률</span><strong>{successRate}%</strong><small>최근 실행</small></article>
-            </section>
-            <section className="panel">
-              <div className="panel-title"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>최근 작업</h2></div><button className="link" onClick={() => setView("runs")}>전체 보기 →</button></div>
-              <RunTable runs={runs.slice(0, 6)} />
-            </section>
-          </>
-        )}
-
-        {view === "plugins" && (
-          <>
-            <form className="install-bar" onSubmit={install}>
-              <div><p className="eyebrow">INSTALL FROM GIT</p><h2>새 플러그인 연결</h2></div>
-              <input type="url" required placeholder="https://github.com/org/plugin.git" value={repository} onChange={(event) => setRepository(event.target.value)} />
-              <button className="primary">설치</button>
-            </form>
-            <section className="plugin-grid">
-              {plugins.map((plugin) => (
-                <article className="plugin-card" key={plugin.id}>
-                  <div className="plugin-icon">{plugin.name.slice(0, 1)}</div>
-                  <div><span className={`badge ${plugin.state}`}>{plugin.state}</span><h2>{plugin.name}</h2><code>{plugin.id}</code></div>
-                  <div className="task-list">
-                    {(manifests[plugin.id]?.tasks || []).map((task) => (
-                      <TaskLauncher
-                        key={task.id}
-                        task={task}
-                        onRun={(input) => runTask(plugin.id, task.id, input)}
-                      />
-                    ))}
-                  </div>
-                </article>
-              ))}
-              {!plugins.length && <div className="empty">아직 설치된 플러그인이 없습니다.</div>}
-            </section>
-          </>
-        )}
-
-        {view === "runs" && <section className="panel"><RunTable runs={runs} /></section>}
-        {view === "schedules" && (
-          <section className="panel empty-state"><div className="clock">◷</div><h2>스케줄 API가 준비되었습니다.</h2><p>플러그인 작업과 cron 표현식을 API에서 등록할 수 있습니다.<br />관리 폼은 다음 UI 반복에서 연결합니다.</p></section>
-        )}
-      </main>
-    </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -182,57 +459,76 @@ function TaskLauncher({
   onRun,
 }: {
   task: Manifest["tasks"][number];
-  onRun: (input: Record<string, unknown>) => Promise<void>;
+  onRun: (taskName: string, input: Record<string, unknown>) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [values, setValues] = useState<Record<string, unknown>>(() =>
-    Object.fromEntries(
-      Object.entries(task.input_schema.properties || {}).map(([key, property]) => [key, property.default ?? ""]),
-    ),
-  );
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    await onRun(values);
-    setOpen(false);
-  }
-
+  const [input, setInput] = useState("{}");
+  const [submitting, setSubmitting] = useState(false);
   return (
-    <>
-      <button onClick={() => setOpen(true)}>{task.title}<span>실행 →</span></button>
-      {open && <div className="modal-backdrop" onClick={() => setOpen(false)}>
-        <form className="schema-form" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
-          <p className="eyebrow">SCHEMA GENERATED FORM</p>
-          <h2>{task.title}</h2>
-          {Object.entries(task.input_schema.properties || {}).map(([key, property]) => (
-            <label key={key}>{property.title || key}
-              <input
-                type={property.type === "number" || property.type === "integer" ? "number" : "text"}
-                required={task.input_schema.required?.includes(key)}
-                value={String(values[key] ?? "")}
-                onChange={(event) => setValues({
-                  ...values,
-                  [key]: property.type === "number" || property.type === "integer"
-                    ? Number(event.target.value)
-                    : event.target.value,
-                })}
-              />
-            </label>
-          ))}
-          {!Object.keys(task.input_schema.properties || {}).length && <p className="muted">입력값이 필요하지 않습니다.</p>}
-          <div className="form-actions"><button type="button" className="ghost" onClick={() => setOpen(false)}>취소</button><button className="primary">작업 실행</button></div>
-        </form>
-      </div>}
-    </>
+    <article className="task-card">
+      <div>
+        <span className="eyebrow">TASK</span>
+        <h3>{task.title ?? task.id}</h3>
+        <p>{task.id}</p>
+      </div>
+      <textarea
+        rows={5}
+        value={input}
+        onChange={(event) => setInput(event.target.value)}
+        aria-label={`${task.id} 입력 JSON`}
+      />
+      <button
+        disabled={submitting}
+        onClick={async () => {
+          try {
+            setSubmitting(true);
+            await onRun(task.id, JSON.parse(input));
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+      >
+        {submitting ? "요청 중" : "실행"}
+      </button>
+    </article>
   );
 }
 
 function RunTable({ runs }: { runs: TaskRun[] }) {
+  if (!runs.length) {
+    return <EmptyState>아직 실행 이력이 없습니다.</EmptyState>;
+  }
   return (
-    <div className="table-wrap"><table><thead><tr><th>작업</th><th>플러그인</th><th>상태</th><th>진행률</th><th>시작 시각</th></tr></thead>
-      <tbody>{runs.map((run) => <tr key={run.id}><td><strong>{run.task_name}</strong><small>{run.id.slice(0, 8)}</small></td><td>{run.plugin_id || "platform"}</td><td><span className={`badge ${run.state}`}>{run.state}</span></td><td><div className="progress"><i style={{ width: `${run.progress}%` }} /></div></td><td>{new Date(run.created_at).toLocaleString("ko-KR")}</td></tr>)}</tbody>
-    </table>{!runs.length && <div className="empty">실행 이력이 없습니다.</div>}</div>
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>플러그인</th>
+            <th>작업</th>
+            <th>상태</th>
+            <th>진행률</th>
+            <th>실행 시각</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>{run.plugin_id}</td>
+              <td>{run.task_name}</td>
+              <td>
+                <span className={`badge ${run.state}`}>{run.state}</span>
+              </td>
+              <td>{run.progress}%</td>
+              <td>{new Date(run.created_at).toLocaleString("ko-KR")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
+}
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return <div className="empty">{children}</div>;
 }
 
 export default App;

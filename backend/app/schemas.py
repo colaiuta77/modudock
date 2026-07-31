@@ -23,12 +23,43 @@ class UserView(BaseModel):
     id: str
     username: str
     role: Role
+    is_active: bool
 
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=80)
     password: str = Field(min_length=10, max_length=128)
     role: Role = Role.viewer
+
+
+class UserUpdate(BaseModel):
+    username: str = Field(min_length=3, max_length=80)
+    role: Role
+    is_active: bool
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class PasswordReset(BaseModel):
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class PluginMenuView(BaseModel):
+    plugin_id: str
+    plugin_name: str
+    menu_id: str
+    title: str
+    enabled: bool
+    position: int
+
+
+class PluginMenuUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    enabled: bool
+    position: int = Field(ge=0, le=10000)
 
 
 class PluginInstallRequest(BaseModel):

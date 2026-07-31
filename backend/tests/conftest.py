@@ -26,7 +26,10 @@ def database():
         db.execute(delete(User))
         db.add(User(username="admin", password_hash=hash_password("test-password"), role="admin"))
     yield
-    Base.metadata.drop_all(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        Base.metadata.drop_all(connection)
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
 @pytest.fixture

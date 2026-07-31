@@ -9,6 +9,13 @@ export type Plugin = {
   active_release_id: string | null;
 };
 
+export type User = {
+  id: string;
+  username: string;
+  role: "admin" | "operator" | "viewer";
+  is_active: boolean;
+};
+
 export type TaskRun = {
   id: string;
   plugin_id: string | null;
@@ -17,6 +24,40 @@ export type TaskRun = {
   progress: number;
   created_at: string;
   error: string | null;
+};
+
+export type Schedule = {
+  id: string;
+  name: string;
+  plugin_id: string;
+  task_name: string;
+  cron: string;
+  timezone: string;
+  input: Record<string, unknown>;
+  enabled: boolean;
+  next_run_at: string;
+  last_run_at: string | null;
+};
+
+export type LogEntry = {
+  id: number;
+  level: string;
+  message: string;
+  plugin_id: string | null;
+  task_id: string | null;
+  run_id: string | null;
+  user_id: string | null;
+  timestamp: string;
+  context: Record<string, unknown>;
+};
+
+export type PluginMenu = {
+  plugin_id: string;
+  plugin_name: string;
+  menu_id: string;
+  title: string;
+  enabled: boolean;
+  position: number;
 };
 
 export type Manifest = {

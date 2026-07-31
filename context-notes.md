@@ -19,3 +19,8 @@
 - 실제 빈 Docker 볼륨 기동에서 API·Redis healthy, worker Celery ready, scheduler running, API·웹 HTTP 200을 확인했다. Celery root 실행 경고는 후속 컨테이너 권한 강화 항목으로 남긴다.
 - 사용자 요청에 따라 별도 Nginx web 컨테이너를 제거했다. React는 Node 빌드 stage에서 생성해 API 이미지에 포함하고 FastAPI가 7438 포트에서 UI와 API를 함께 제공한다.
 - 통합 이미지의 실제 빈 볼륨 기동에서 네 컨테이너만 생성됨을 확인했다. 7438 포트의 UI·health·API 문서가 모두 HTTP 200이었고 worker ready와 scheduler running도 확인했다.
+- 설정 내비게이션은 FlaskFarm처럼 사이드바의 설정 아래 플러그인, 스케줄, 사용자 계정, 메뉴 편집, 전체 로그, 비밀번호 변경을 배치했다. 일반 계정에는 전체 로그와 본인 비밀번호 변경만 노출한다.
+- 계정 삭제는 작업·로그의 사용자 참조를 보존하기 위해 실제 행 삭제 대신 즉시 로그인 차단되는 비활성화로 처리한다. 마지막 활성 관리자와 현재 로그인한 계정은 삭제할 수 없다.
+- 플러그인 메뉴 설정은 manifest 원본을 수정하지 않고 `plugin_menu_preferences`에 표시 이름, 노출 여부, 순서를 덮어쓴다. 플러그인 업데이트와 롤백 이후에도 사용자 편집값을 유지하기 위한 결정이다.
+- 전체 로그 화면은 DB에 저장된 플랫폼·플러그인·작업 로그를 한 스트림으로 보여주며 레벨, 메시지 검색, 5초 자동 갱신을 제공한다.
+- 새 설정 기능은 빈 Docker 볼륨에서 Alembic 0002 적용, API·Redis healthy, worker ready, scheduler running을 확인했다. 관리자 로그인 후 설정, 사용자 관리, 스케줄, 전체 로그 화면을 실제 브라우저에서 확인했고 콘솔 오류는 없었다.

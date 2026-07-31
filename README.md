@@ -10,6 +10,9 @@ ModuDock은 Git 저장소에서 플러그인을 설치하고 작업과 스케줄
 - Celery 작업 실행, 진행률, 협력형 취소 요청, 구조화 로그, SSE 상태 스트림.
 - SQLite 기반 스케줄 CRUD와 DB lease 단일 활성 스케줄러.
 - JSON Schema 기반 작업 입력 폼과 플러그인 설정 검증.
+- 설정 하위의 플러그인·스케줄·사용자 계정·전체 로그·플러그인 메뉴 관리.
+- 관리자와 일반 계정 관리, 계정 비활성화, 관리자 재설정과 본인 비밀번호 변경.
+- manifest 메뉴의 표시 이름, 노출 여부, 사이드바 순서 편집.
 - FastAPI 이미지에 통합된 React 관리 콘솔과 샘플 플러그인.
 
 ## 빠른 시작
@@ -79,9 +82,12 @@ npm run dev
 ## API 개요
 
 - `POST /api/auth/token`.
+- `GET /api/auth/me`, `PUT /api/auth/password`.
 - `GET`, `POST /api/users`.
+- `PUT`, `DELETE /api/users/{id}`, `PUT /api/users/{id}/password`.
 - `GET /api/plugins`.
 - `POST /api/plugins/install`.
+- `GET /api/plugin-menus`, `PUT /api/plugin-menus/{plugin_id}/{menu_id}`.
 - `GET /api/plugins/{id}/manifest`.
 - `GET`, `PUT /api/plugins/{id}/settings`.
 - `GET /api/plugins/{id}/releases`.

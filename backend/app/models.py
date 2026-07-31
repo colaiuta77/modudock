@@ -104,6 +104,20 @@ class PluginSetting(Base):
     )
 
 
+class PluginMenuPreference(Base):
+    __tablename__ = "plugin_menu_preferences"
+
+    plugin_id: Mapped[str] = mapped_column(ForeignKey("plugins.id"), primary_key=True)
+    menu_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    title: Mapped[str] = mapped_column(String(160))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class TaskRun(Base):
     __tablename__ = "task_runs"
 
