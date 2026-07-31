@@ -22,23 +22,58 @@ ModuDock은 Git 저장소에서 플러그인을 설치하고 작업과 스케줄
 
 Tabler 관련 패키지는 MIT 라이선스입니다. 배포 시 포함해야 하는 저작권과 라이선스 문구는 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)에 기록했습니다.
 
-## 빠른 시작
+## Docker 이미지로 설치
 
 필요 조건은 Docker Engine과 Docker Compose입니다.
 
 ```bash
+mkdir modudock
+cd modudock
+# compose.release.yaml과 .env.example을 이 디렉터리에 저장합니다.
 cp .env.example .env
 ```
 
-`.env`의 `MODUDOCK_SECRET_KEY`와 `MODUDOCK_ADMIN_PASSWORD`를 반드시 변경한 뒤 실행합니다.
+`.env`의 `MODUDOCK_SECRET_KEY`와 `MODUDOCK_ADMIN_PASSWORD`를 반드시 변경합니다. 안정적인 운영 환경에서는 `MODUDOCK_VERSION`을 `latest` 대신 `0.1.0` 같은 고정 버전으로 지정합니다.
 
 ```bash
-docker compose up --build
+docker compose -f compose.release.yaml pull
+docker compose -f compose.release.yaml up -d
 ```
 
 - 관리 콘솔은 `http://localhost:7438`에서 엽니다.
 - API 문서는 `http://localhost:7438/docs`에서 확인합니다.
 - 초기 계정 이름은 `.env`의 `MODUDOCK_ADMIN_USERNAME` 값입니다.
+
+업데이트할 때는 버전을 변경한 뒤 이미지를 다시 받습니다.
+
+```bash
+docker compose -f compose.release.yaml pull
+docker compose -f compose.release.yaml up -d
+```
+
+이전 버전으로 롤백하려면 `.env`의 `MODUDOCK_VERSION`을 이전 버전으로 되돌리고 같은 명령을 실행합니다. Docker volume의 SQLite와 Redis 데이터는 컨테이너 교체 후에도 유지됩니다.
+
+## 소스에서 빌드
+
+개발하거나 직접 이미지를 빌드할 때는 저장소 루트에서 실행합니다.
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+## 컨테이너 이미지 게시
+
+GitHub Actions의 `Container image` 워크플로는 `main` 또는 `master` 푸시에서 AMD64·ARM64 빌드만 검증합니다. 이미지는 `v0.1.0` 같은 Git 태그를 push할 때만 GHCR에 게시됩니다.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+게시되는 이미지 이름은 `ghcr.io/colaiuta77/modudock`입니다. 안정 버전 태그에서는 `0.1.0`, `0.1`, `latest`, commit SHA 태그를 함께 생성합니다.
+
+GHCR 패키지는 최초 게시 시 private입니다. 인증 없는 사용자 설치를 제공하려면 GitHub 패키지 설정에서 이미지 공개 범위를 public으로 변경해야 합니다. 저장소가 private인 동안에도 컨테이너 패키지는 별도로 공개할 수 있습니다.
 
 ## 샘플 플러그인 사용
 

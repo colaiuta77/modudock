@@ -42,3 +42,7 @@
 - Synology 변경 파일 배포 대상은 FTP 화면 기준 `/docker/ModuDock`이며 Docker 재빌드는 사용자가 직접 수행한다. 접속 자격 증명은 저장소나 작업 문서에 기록하지 않고, 2222 포트가 SFTP/SSH로 확인될 때만 전송한다.
 - NAS 실제 경로는 `/volume1/docker/ModuDock`이고 `.git`은 없다. 핵심 소스 7개의 SHA-256이 모두 로컬 `c63d2fe` blob과 일치해 배포 기준을 `c63d2fe`로 식별했으며, 업로드 소스는 작업 트리가 아닌 `daa46da` 커밋에서 추출한다.
 - `c63d2fe..daa46da`의 수정 파일 13개만 SFTP 가상 경로 `/docker/ModuDock`에 전송했다. 원격 SHA-256이 `daa46da` 추출본과 13개 모두 일치했으며 `.env`, 데이터·플러그인 경로, 의존성·빌드 산출물은 건드리지 않고 Docker 재빌드도 수행하지 않았다.
+- 설치 편의성을 위해 소스 빌드 외에 GHCR 배포 경로를 추가한다. 비공개 저장소에서도 `GITHUB_TOKEN`으로 이미지를 게시할 수 있고, 향후 GHCR 패키지를 public으로 전환하면 사용자는 인증 없이 pull할 수 있다.
+- API·worker·scheduler는 실행 명령만 다르고 같은 파일 시스템이 필요하므로 하나의 `ghcr.io/colaiuta77/modudock` 이미지를 공유한다. 릴리스는 `v*` 태그에서만 게시하고 일반 브랜치 푸시는 빌드 검증만 수행한다.
+- Actions는 현재 공식 문서의 `checkout@v6`, Docker `login/setup-qemu/setup-buildx@v4`, `metadata@v6`, `build-push@v7` 조합을 사용한다. `GITHUB_TOKEN`의 `packages: write`만으로 GHCR에 게시하고 BuildKit GHA 캐시, provenance와 SBOM을 이미지에 포함한다.
+- 배포 Compose 렌더링에서 GHCR 이미지 3개와 Redis 이미지가 확인됐고 Buildx의 AMD64·ARM64 Dockerfile check는 통과했다. 외부 actionlint 컨테이너의 저장소 전체 마운트는 보안상 실행하지 않고 PyYAML 기반 구조 검증으로 필수 권한·액션·플랫폼을 확인했다.

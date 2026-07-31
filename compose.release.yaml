@@ -1,0 +1,59 @@
+name: modudock
+
+x-backend: &backend
+  image: ghcr.io/colaiuta77/modudock:${MODUDOCK_VERSION:-latest}
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    - modudock-data:/data
+    - modudock-plugins:/plugins
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  api:
+    <<: *backend
+    command: ["api"]
+    ports:
+      - "7438:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *backend
+    command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    <<: *backend
+    command: ["scheduler"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - modudock-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  modudock-data:
+  modudock-plugins:
+  modudock-redis:

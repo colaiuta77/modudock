@@ -62,3 +62,11 @@ Docker Compose로 단일 서버에 설치할 수 있는 플러그인 기반 자�
 3. 확인된 기준과 로컬 HEAD 사이의 추가·변경·삭제 파일을 계산한다.
 4. `.env`, 데이터·플러그인 볼륨, `node_modules`, `dist`, `.git`을 제외하고 변경 파일만 전송한다.
 5. 원격 파일 크기와 해시를 검증하며 Docker 재빌드는 사용자가 직접 수행한다.
+
+## GHCR 이미지 배포 자동화
+
+1. `main`·`master` 푸시에서는 멀티 아키텍처 Docker 빌드를 검증하고 이미지를 게시하지 않는다.
+2. `v*` Git 태그에서는 `linux/amd64`, `linux/arm64` 이미지를 빌드해 `ghcr.io/colaiuta77/modudock`에 게시한다.
+3. SemVer 버전·부 버전·`latest`와 commit SHA 태그를 생성해 업데이트와 롤백을 지원한다.
+4. 사용자는 소스 빌드 대신 `compose.release.yaml`과 `.env`로 동일 이미지를 API·worker·scheduler에 사용한다.
+5. 로컬에서 워크플로 YAML, Compose 렌더링과 Docker 빌드를 검증하며 GitHub push는 별도 요청 전까지 수행하지 않는다.

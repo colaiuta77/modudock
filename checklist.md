@@ -100,3 +100,14 @@
 - [x] 변경 파일만 업로드.
 - [x] 원격 파일 크기·해시 검증.
 - [x] Docker 재빌드 미수행 확인.
+
+## GHCR 이미지 배포 자동화
+
+- [x] 태그 기반 GHCR publish 워크플로 추가.
+- [x] AMD64·ARM64 멀티 아키텍처와 BuildKit 캐시 구성.
+- [x] SemVer·SHA·latest 이미지 태그 구성.
+- [x] 이미지 pull 전용 Compose 추가.
+- [x] 이미지 버전 환경 변수와 설치·업데이트·롤백 문서화.
+- [x] YAML·Compose·Docker 빌드 검증.
+- [x] GitHub push 미수행 확인.
+- [x] 의미 단위 커밋 생성.
