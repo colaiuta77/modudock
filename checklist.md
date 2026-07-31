@@ -20,3 +20,11 @@
 - [x] pydantic-settings 자동 JSON 디코딩 비활성화.
 - [x] 회귀 테스트와 전체 백엔드 검증.
 - [x] 버그 수정 커밋 생성.
+
+## 프런트엔드 포트와 로컬 Docker 도구
+
+- [x] Docker 공개 포트를 7438로 변경.
+- [x] CORS 기본값과 문서·테스트 동기화.
+- [x] Windows에 Docker Desktop 설치.
+- [x] Compose 구성과 전체 회귀 검증.
+- [x] 변경 커밋 생성.

@@ -26,7 +26,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- 관리 콘솔은 `http://localhost:8080`에서 엽니다.
+- 관리 콘솔은 `http://localhost:7438`에서 엽니다.
 - API 문서는 `http://localhost:8000/docs`에서 확인합니다.
 - 초기 계정 이름은 `.env`의 `MODUDOCK_ADMIN_USERNAME` 값입니다.
 

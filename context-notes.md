@@ -13,3 +13,5 @@
 - MVP 취소는 협력형으로 구현한다. 실행 중 프로세스가 반환된 뒤 취소 요청을 확인하고 결과를 폐기한다.
 - plugin worker는 API와 분리했지만 작업별 커널 수준 sandbox는 아직 적용하지 않았다. 후속 runner agent의 명시적 보안 요구사항으로 문서화했다.
 - `pydantic-settings`는 복합 타입 환경 변수를 validator 실행 전에 JSON으로 디코딩한다. 문서화된 쉼표 구분 CORS 값을 유지하기 위해 해당 필드에 `NoDecode`를 적용하고 validator가 직접 분리하도록 했다.
+- Docker로 공개하는 관리 콘솔 포트는 사용자 요청에 따라 8080에서 7438로 변경했다. Vite 로컬 개발 포트 5173은 유지한다.
+- 로컬 검증을 위해 Docker Desktop 4.84.0, Docker CLI·Engine 29.6.2, Compose 5.3.1을 설치했다. 구형 inbox WSL로 backend가 시작되지 않아 Store 기반 WSL 2.7.11.0도 설치했다.

@@ -5,12 +5,12 @@ from app.config import Settings
 def test_cors_origins_accepts_comma_separated_env(monkeypatch):
     monkeypatch.setenv(
         "MODUDOCK_CORS_ORIGINS",
-        "http://localhost:5173, http://localhost:8080",
+        "http://localhost:5173, http://localhost:7438",
     )
 
     settings = Settings(_env_file=None)
 
     assert settings.cors_origins == [
         "http://localhost:5173",
-        "http://localhost:8080",
+        "http://localhost:7438",
     ]

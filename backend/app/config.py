@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     plugin_root: Path = Path("./plugins")
     cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:5173",
-        "http://localhost:8080",
+        "http://localhost:7438",
     ]
     access_token_minutes: int = 60
     scheduler_poll_seconds: int = 5
