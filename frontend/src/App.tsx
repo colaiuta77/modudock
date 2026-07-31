@@ -1,5 +1,28 @@
 // ModuDock의 인증, 내비게이션, 작업 실행 화면을 구성하는 루트 컴포넌트
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  IconActivity,
+  IconAnchor,
+  IconApps,
+  IconCalendarClock,
+  IconChevronDown,
+  IconChevronRight,
+  IconCircleCheck,
+  IconClock,
+  IconHistory,
+  IconKey,
+  IconLayoutDashboard,
+  IconListDetails,
+  IconLoader2,
+  IconLogout,
+  IconMenu2,
+  IconPlayerPlay,
+  IconPlugConnected,
+  IconPuzzle,
+  IconRefresh,
+  IconSettings,
+  IconUsers,
+} from "@tabler/icons-react";
 
 import {
   api,
@@ -148,14 +171,25 @@ function App() {
     <div className="shell">
       <aside>
         <div className="brand">
-          <span>M</span>
-          <strong>ModuDock</strong>
+          <span><IconAnchor size={22} stroke={2.2} /></span>
+          <div>
+            <strong>ModuDock</strong>
+            <small>Automation platform</small>
+          </div>
         </div>
         <nav>
-          <NavButton active={view === "overview"} onClick={() => setView("overview")}>
+          <NavButton
+            active={view === "overview"}
+            icon={<IconLayoutDashboard />}
+            onClick={() => setView("overview")}
+          >
             개요
           </NavButton>
-          <NavButton active={view === "runs"} onClick={() => setView("runs")}>
+          <NavButton
+            active={view === "runs"}
+            icon={<IconHistory />}
+            onClick={() => setView("runs")}
+          >
             작업 이력
           </NavButton>
 
@@ -165,6 +199,7 @@ function App() {
               key={`${menu.plugin_id}:${menu.menu_id}`}
               active={selectedPluginId === menu.plugin_id}
               className="plugin-nav"
+              icon={<IconPuzzle />}
               onClick={() => setView(`plugin:${menu.plugin_id}`)}
             >
               {menu.title}
@@ -175,6 +210,8 @@ function App() {
             <NavButton
               active={view === "settings"}
               className="nav-parent"
+              icon={<IconSettings />}
+              suffix={settingsOpen ? <IconChevronDown /> : <IconChevronRight />}
               onClick={() => setView("settings")}
             >
               설정
@@ -185,24 +222,28 @@ function App() {
                   <>
                     <NavButton
                       active={view === "settings/plugins"}
+                      icon={<IconPlugConnected />}
                       onClick={() => setView("settings/plugins")}
                     >
                       플러그인
                     </NavButton>
                     <NavButton
                       active={view === "settings/schedules"}
+                      icon={<IconCalendarClock />}
                       onClick={() => setView("settings/schedules")}
                     >
                       스케줄
                     </NavButton>
                     <NavButton
                       active={view === "settings/users"}
+                      icon={<IconUsers />}
                       onClick={() => setView("settings/users")}
                     >
                       사용자 계정
                     </NavButton>
                     <NavButton
                       active={view === "settings/menus"}
+                      icon={<IconMenu2 />}
                       onClick={() => setView("settings/menus")}
                     >
                       메뉴 편집
@@ -211,12 +252,14 @@ function App() {
                 )}
                 <NavButton
                   active={view === "settings/logs"}
+                  icon={<IconListDetails />}
                   onClick={() => setView("settings/logs")}
                 >
                   전체 로그
                 </NavButton>
                 <NavButton
                   active={view === "settings/password"}
+                  icon={<IconKey />}
                   onClick={() => setView("settings/password")}
                 >
                   비밀번호 변경
@@ -227,7 +270,7 @@ function App() {
         </nav>
         <div className="aside-footer">
           <div className="system-state">
-            <i />
+            <IconCircleCheck size={17} />
             시스템 정상
           </div>
           <div className="account-summary">
@@ -235,6 +278,7 @@ function App() {
             <small>{isAdmin ? "관리자" : "일반 계정"}</small>
           </div>
           <button className="logout" onClick={logout}>
+            <IconLogout size={18} />
             로그아웃
           </button>
         </div>
@@ -247,6 +291,7 @@ function App() {
             <h1>{pageTitle}</h1>
           </div>
           <button className="ghost" disabled={loading} onClick={() => void refresh()}>
+            {loading ? <IconLoader2 className="spin" size={18} /> : <IconRefresh size={18} />}
             {loading ? "새로고침 중" : "새로고침"}
           </button>
         </header>
@@ -325,16 +370,22 @@ function NavButton({
   active,
   children,
   className = "",
+  icon,
   onClick,
+  suffix,
 }: {
   active: boolean;
   children: React.ReactNode;
   className?: string;
+  icon?: React.ReactNode;
   onClick: () => void;
+  suffix?: React.ReactNode;
 }) {
   return (
     <button className={`${active ? "active" : ""} ${className}`} onClick={onClick}>
-      {children}
+      {icon && <span className="nav-icon">{icon}</span>}
+      <span>{children}</span>
+      {suffix && <span className="nav-suffix">{suffix}</span>}
     </button>
   );
 }
@@ -357,8 +408,11 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="brand login-brand">
-          <span>M</span>
-          <strong>ModuDock</strong>
+          <span><IconAnchor size={22} stroke={2.2} /></span>
+          <div>
+            <strong>ModuDock</strong>
+            <small>Automation platform</small>
+          </div>
         </div>
         <p>플러그인 자동화 플랫폼</p>
         <label>
@@ -394,20 +448,24 @@ function Overview({
     <>
       <section className="stats">
         <article>
-          <span>활성 플러그인</span>
+          <div className="stat-heading"><span>활성 플러그인</span><i><IconApps /></i></div>
           <strong>{plugins.filter((plugin) => plugin.state === "active").length}</strong>
+          <small>연결된 자동화 모듈</small>
         </article>
         <article>
-          <span>표시 메뉴</span>
+          <div className="stat-heading"><span>표시 메뉴</span><i><IconMenu2 /></i></div>
           <strong>{pluginMenus.length}</strong>
+          <small>사이드바 활성 메뉴</small>
         </article>
         <article>
-          <span>진행 중 작업</span>
+          <div className="stat-heading"><span>진행 중 작업</span><i><IconActivity /></i></div>
           <strong>{running}</strong>
+          <small>대기 및 실행 중</small>
         </article>
         <article>
-          <span>최근 실행</span>
+          <div className="stat-heading"><span>최근 실행</span><i><IconClock /></i></div>
           <strong>{runs.length}</strong>
+          <small>기록된 작업 이력</small>
         </article>
       </section>
       <section className="panel">
@@ -487,6 +545,7 @@ function TaskLauncher({
           }
         }}
       >
+        <IconPlayerPlay size={17} />
         {submitting ? "요청 중" : "실행"}
       </button>
     </article>

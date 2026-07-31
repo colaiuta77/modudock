@@ -1,6 +1,16 @@
 // 설정 하위의 플러그인·스케줄·계정·로그·메뉴·비밀번호 관리 화면을 제공한다.
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  IconCalendarClock,
+  IconKey,
+  IconListDetails,
+  IconMenu2,
+  IconPointFilled,
+  IconPlugConnected,
+  IconUsers,
+  type Icon as TablerIcon,
+} from "@tabler/icons-react";
+import {
   api,
   LogEntry,
   Manifest,
@@ -22,29 +32,30 @@ export function SettingsHome({
   isAdmin: boolean;
   onNavigate: (view: string) => void;
 }) {
-  const cards: Array<[string, string, string]> = [
-    ["전체 로그", "플랫폼·플러그인·작업 로그를 통합 조회합니다.", "logs"],
-    ["비밀번호 변경", "현재 로그인한 계정의 비밀번호를 변경합니다.", "password"],
+  const cards: Array<[string, string, string, TablerIcon]> = [
+    ["전체 로그", "플랫폼·플러그인·작업 로그를 통합 조회합니다.", "logs", IconListDetails],
+    ["비밀번호 변경", "현재 로그인한 계정의 비밀번호를 변경합니다.", "password", IconKey],
   ];
   if (isAdmin) {
     cards.unshift(
-      ["플러그인", "Git 플러그인 설치와 활성 상태를 관리합니다.", "plugins"],
-      ["스케줄", "플러그인 작업의 cron 실행 계획을 편집합니다.", "schedules"],
-      ["사용자 계정", "관리자와 일반계정을 추가하고 변경합니다.", "users"],
-      ["메뉴 편집", "플러그인 메뉴의 이름과 노출 순서를 편집합니다.", "menus"],
+      ["플러그인", "Git 플러그인 설치와 활성 상태를 관리합니다.", "plugins", IconPlugConnected],
+      ["스케줄", "플러그인 작업의 cron 실행 계획을 편집합니다.", "schedules", IconCalendarClock],
+      ["사용자 계정", "관리자와 일반계정을 추가하고 변경합니다.", "users", IconUsers],
+      ["메뉴 편집", "플러그인 메뉴의 이름과 노출 순서를 편집합니다.", "menus", IconMenu2],
     );
   }
   return (
     <section className="settings-grid">
-      {cards.map(([title, description, destination]) => (
+      {cards.map(([title, description, destination, CardIcon]) => (
         <button
           className="settings-card"
           key={title}
           onClick={() => onNavigate(`settings/${destination}`)}
         >
-          <span className="settings-card-icon">⌁</span>
+          <span className="settings-card-icon"><CardIcon size={22} stroke={1.8} /></span>
           <h2>{title}</h2>
           <p>{description}</p>
+          <span className="settings-card-link">관리하기</span>
         </button>
       ))}
     </section>
@@ -431,7 +442,7 @@ export function LogsSettings({ token, notify }: CommonProps) {
 
   return (
     <section className="panel log-panel">
-      <div className="panel-title"><div><p className="eyebrow">SYSTEM LOG STREAM</p><h2>전체 로그</h2></div><span className="live-indicator"><i /> {autoRefresh ? "LIVE" : "PAUSED"}</span></div>
+      <div className="panel-title"><div><p className="eyebrow">SYSTEM LOG STREAM</p><h2>전체 로그</h2></div><span className="live-indicator"><IconPointFilled size={16} /> {autoRefresh ? "LIVE" : "PAUSED"}</span></div>
       <div className="filter-bar">
         <select value={level} onChange={(event) => setLevel(event.target.value)}><option value="">모든 레벨</option><option value="INFO">INFO</option><option value="WARNING">WARNING</option><option value="ERROR">ERROR</option></select>
         <input placeholder="메시지 검색" value={query} onChange={(event) => setQuery(event.target.value)} />
