@@ -28,3 +28,11 @@
 - [x] Windows에 Docker Desktop 설치.
 - [x] Compose 구성과 전체 회귀 검증.
 - [x] 변경 커밋 생성.
+
+## 백엔드 동시 시작 마이그레이션 경쟁 수정
+
+- [x] worker·scheduler 종료 로그의 실제 예외 확인.
+- [x] Alembic bootstrap을 API 단일 책임으로 변경.
+- [x] worker·scheduler가 API health 이후 시작되도록 변경.
+- [x] 빈 볼륨에서 Compose 전체 기동 검증.
+- [x] 백엔드 회귀 테스트와 수정 커밋 생성.

@@ -15,3 +15,5 @@
 - `pydantic-settings`는 복합 타입 환경 변수를 validator 실행 전에 JSON으로 디코딩한다. 문서화된 쉼표 구분 CORS 값을 유지하기 위해 해당 필드에 `NoDecode`를 적용하고 validator가 직접 분리하도록 했다.
 - Docker로 공개하는 관리 콘솔 포트는 사용자 요청에 따라 8080에서 7438로 변경했다. Vite 로컬 개발 포트 5173은 유지한다.
 - 로컬 검증을 위해 Docker Desktop 4.84.0, Docker CLI·Engine 29.6.2, Compose 5.3.1을 설치했다. 구형 inbox WSL로 backend가 시작되지 않아 Store 기반 WSL 2.7.11.0도 설치했다.
+- API·worker·scheduler가 동시에 Alembic을 실행하면 SQLite DDL 경쟁이 발생한다. 마이그레이션과 관리자 bootstrap은 단일 API 컨테이너만 담당하고 worker·scheduler는 API health 이후 시작하도록 책임을 분리했다.
+- 실제 빈 Docker 볼륨 기동에서 API·Redis healthy, worker Celery ready, scheduler running, API·웹 HTTP 200을 확인했다. Celery root 실행 경고는 후속 컨테이너 권한 강화 항목으로 남긴다.

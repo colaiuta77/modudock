@@ -2,10 +2,9 @@
 # ModuDock 백엔드 프로세스 유형에 맞는 서비스를 시작한다.
 set -eu
 
-python -m app.bootstrap
-
 case "${1:-api}" in
   api)
+    python -m app.bootstrap
     exec uvicorn app.main:app --host 0.0.0.0 --port 8000
     ;;
   worker)

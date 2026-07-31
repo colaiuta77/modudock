@@ -20,6 +20,14 @@ Browser
 
 활성 release pointer 교체 전 실패는 기존 활성 release에 영향을 주지 않습니다. 롤백은 healthy release의 pointer를 다시 선택하는 작업입니다.
 
+## 컨테이너 시작 순서
+
+1. Redis가 health check를 통과한다.
+2. API가 Alembic 마이그레이션과 최초 관리자 생성을 단독으로 수행한다.
+3. API health check가 성공한 뒤 worker와 scheduler가 시작된다.
+
+SQLite에 대한 동시 DDL 경쟁을 막기 위해 worker와 scheduler는 데이터베이스 bootstrap을 실행하지 않습니다.
+
 ## 후속 격리 모델
 
 신뢰할 수 없는 플러그인과 터미널을 지원할 때 worker가 직접 subprocess를 실행하는 구조를 runner agent 호출 구조로 교체합니다. runner는 작업별 uid, 읽기 전용 root filesystem, 허용 volume, seccomp, CPU·메모리·시간 제한, 기본 네트워크 차단을 적용해야 합니다.

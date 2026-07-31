@@ -27,10 +27,20 @@ services:
   worker:
     <<: *backend
     command: ["worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   scheduler:
     <<: *backend
     command: ["scheduler"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   redis:
     image: redis:8-alpine
