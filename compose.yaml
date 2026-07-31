@@ -1,0 +1,58 @@
+name: modudock
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  env_file: .env
+  volumes:
+    - modudock-data:/data
+    - modudock-plugins:/plugins
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  api:
+    <<: *backend
+    command: ["api"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *backend
+    command: ["worker"]
+
+  scheduler:
+    <<: *backend
+    command: ["scheduler"]
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - modudock-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  modudock-data:
+  modudock-plugins:
+  modudock-redis:

@@ -1,0 +1,30 @@
+schema_version: 1
+id: hello-world
+name: Hello World
+version: 0.1.0
+platform: ">=0.1,<1"
+tasks:
+  - id: greet
+    title: 인사 메시지 만들기
+    command: [python, task.py]
+    input_schema:
+      type: object
+      properties:
+        name:
+          type: string
+          title: 이름
+      required: [name]
+menus:
+  - id: greeting
+    title: 인사
+settings_schema:
+  type: object
+  properties:
+    prefix:
+      type: string
+      default: 안녕하세요
+permissions: []
+dependencies: []
+health_check:
+  command: [python, health.py]
+  timeout_seconds: 10

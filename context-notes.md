@@ -1,0 +1,14 @@
+# ModuDock 컨텍스트 노트
+
+## 2026-07-31
+
+- 기존 프로젝트와 분리하기 위해 현재 작업 폴더 아래 `ModuDock` 독립 Git 저장소를 생성했다.
+- API는 플러그인 코드를 import하거나 실행하지 않는다. 설치 파이프라인은 별도 Celery worker에서 수행한다.
+- SQLite는 WAL, busy timeout, 짧은 트랜잭션을 적용하고 데이터 볼륨에 저장한다.
+- 스케줄러는 DB lease를 획득한 단일 인스턴스만 due schedule을 발행하는 구조로 설계한다.
+- 초기 플러그인 UI는 manifest의 JSON Schema와 작업 선언을 렌더링한다.
+- 파일 탐색기와 터미널은 MVP에서 제외한다. 추후 별도 agent, 허용 경로, 재인증, 감사 로그를 필수 전제로 한다.
+- 로컬에서 바로 평가할 수 있도록 개발 모드도 제공하되 공식 실행 경로는 Docker Compose로 둔다.
+- Git transport는 command helper 악용을 막기 위해 HTTPS와 SSH만 허용한다.
+- MVP 취소는 협력형으로 구현한다. 실행 중 프로세스가 반환된 뒤 취소 요청을 확인하고 결과를 폐기한다.
+- plugin worker는 API와 분리했지만 작업별 커널 수준 sandbox는 아직 적용하지 않았다. 후속 runner agent의 명시적 보안 요구사항으로 문서화했다.
