@@ -30,3 +30,7 @@
 - 기존 사이드바 구조는 설정 하위 메뉴와 동적 플러그인 메뉴를 한눈에 보여주는 ModuDock의 핵심 정보 구조이므로 유지했다. Tabler의 상단 내비게이션을 그대로 복제하지 않고 밝은 표면, 파란 활성 상태, 아이콘과 카드 밀도만 제품 구조에 맞게 이식했다.
 - 첫 모바일 렌더링에서 펼쳐진 설정 하위 메뉴가 aside의 intrinsic width를 키워 957px 가로 넘침을 만들었다. 모바일 aside와 nav의 최소 폭을 0으로 제한하고 nav 내부에서만 가로 스크롤하도록 수정해 390px viewport에서 문서 폭 375px을 확인했다.
 - 디자인 QA는 Tabler 1265×710 기준 캡처와 ModuDock 1280×720 실제 캡처를 같은 비교 입력으로 확인했다. 콘솔 오류 없이 데스크톱·모바일 주요 상태를 확인했으며 최종 결과는 passed다.
+- Tabler 본체는 MIT 라이선스이며 저작권과 라이선스 문구를 배포물에 포함하는 조건으로 사용·수정·재배포할 수 있다.
+- Tabler Core는 Bootstrap 기반 CSS와 JavaScript를 함께 제공하지만 ModuDock은 React가 상태를 관리한다. 향후 확장을 위해 공식 CSS만 기반 계층으로 사용하고 Bootstrap의 imperative JavaScript는 로드하지 않는다.
+- 전역 충돌을 줄이기 위해 import 순서는 Tabler Core CSS 다음에 ModuDock `styles.css`로 고정한다. 현재 화면은 ModuDock 오버라이드가 유지되고 새 화면은 Tabler 컴포넌트 클래스를 점진적으로 사용할 수 있다.
+- `@tabler/core` 1.4.0 적용 후 프런트 빌드와 Compose API 이미지 빌드가 통과했다. 로그인된 설정·사용자 계정 화면과 390×844 설정 화면을 확인했으며 모바일 문서 가로 넘침은 없었다.

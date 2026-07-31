@@ -152,7 +152,7 @@ function App() {
   }
 
   if (!currentUser) {
-    return <div className="app-loading">ModuDock를 불러오는 중입니다.</div>;
+    return <div className="app-loading" data-bs-theme="light">ModuDock를 불러오는 중입니다.</div>;
   }
 
   const isAdmin = currentUser.role === "admin";
@@ -168,7 +168,7 @@ function App() {
     .sort((left, right) => left.position - right.position || left.title.localeCompare(right.title));
 
   return (
-    <div className="shell">
+    <div className="shell" data-bs-theme="light">
       <aside>
         <div className="brand">
           <span><IconAnchor size={22} stroke={2.2} /></span>
@@ -405,7 +405,7 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page" data-bs-theme="light">
       <form className="login-card" onSubmit={submit}>
         <div className="brand login-brand">
           <span><IconAnchor size={22} stroke={2.2} /></span>

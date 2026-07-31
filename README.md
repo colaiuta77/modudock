@@ -16,6 +16,12 @@ ModuDock은 Git 저장소에서 플러그인을 설치하고 작업과 스케줄
 - 첨부 테마 토큰과 Tabler UI를 반영한 밝은 관리 콘솔, 공식 Tabler Icons 기반 내비게이션.
 - FastAPI 이미지에 통합된 React 관리 콘솔과 샘플 플러그인.
 
+## UI 기반
+
+관리 콘솔은 공식 `@tabler/core` CSS를 기반 계층으로 사용하고, 제품별 디자인 토큰과 레이아웃은 `styles.css`에서 확장합니다. 내비게이션과 폼 상태는 React가 관리하므로 Bootstrap·Tabler JavaScript는 로드하지 않습니다. 아이콘은 `@tabler/icons-react`를 사용합니다.
+
+Tabler 관련 패키지는 MIT 라이선스입니다. 배포 시 포함해야 하는 저작권과 라이선스 문구는 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)에 기록했습니다.
+
 ## 빠른 시작
 
 필요 조건은 Docker Engine과 Docker Compose입니다.

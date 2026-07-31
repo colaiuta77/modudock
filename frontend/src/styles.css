@@ -3,27 +3,27 @@
 
 :root {
   font-family: "Inter Var", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", Roboto, sans-serif;
-  color: #374151;
-  background: #f9fafb;
+  color: var(--tblr-body-color, #374151);
+  background: var(--tblr-body-bg, #f9fafb);
   font-synthesis: none;
-  --accent: #066fd1;
+  --accent: var(--tblr-primary, #066fd1);
   --accent-hover: #055fac;
   --accent-soft: #eaf3fc;
-  --background: #f9fafb;
-  --surface: #ffffff;
+  --background: var(--tblr-body-bg, #f9fafb);
+  --surface: var(--tblr-bg-surface, #ffffff);
   --surface-muted: #f3f4f6;
-  --text: #374151;
+  --text: var(--tblr-body-color, #374151);
   --text-strong: #1f2937;
   --muted: #6b7280;
-  --border: #e5e7eb;
+  --border: var(--tblr-border-color, #e5e7eb);
   --border-strong: #d1d5db;
-  --success: #2fb344;
+  --success: var(--tblr-success, #2fb344);
   --success-soft: #eaf7ec;
-  --warning: #f59f00;
+  --warning: var(--tblr-warning, #f59f00);
   --warning-soft: #fff5dc;
-  --danger: #d63939;
+  --danger: var(--tblr-danger, #d63939);
   --danger-soft: #fceded;
-  --radius-sm: 6px;
+  --radius-sm: var(--tblr-border-radius, 6px);
   --radius: 8px;
   --shadow-sm: rgba(31, 41, 55, .06) 0 1px 2px;
   --shadow-md: rgba(0, 0, 0, .07) 0 16px 24px 2px, rgba(0, 0, 0, .06) 0 6px 30px 5px;

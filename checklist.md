@@ -68,3 +68,14 @@
 - [x] 프런트 빌드와 Compose 통합 검증.
 - [x] 디자인 QA 기록.
 - [x] 의미 단위 커밋 생성.
+
+## Tabler Core 확장 기반
+
+- [x] Tabler 본체 MIT 라이선스와 고지 의무 확인.
+- [x] 제3자 라이선스 고지 문서 추가.
+- [x] 공식 `@tabler/core` 의존성과 CSS 기반 계층 추가.
+- [x] ModuDock 토큰을 Tabler 변수와 호환되게 연결.
+- [x] Tabler JavaScript를 제외하고 React 상태 소유권 유지.
+- [x] 프런트 빌드와 Compose 통합 검증.
+- [x] 브라우저 스타일 충돌과 모바일 회귀 확인.
+- [x] 의미 단위 커밋 생성.
