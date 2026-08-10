@@ -1,11 +1,17 @@
 # 선언된 플러그인 리소스의 관리자·공개 API와 후속 작업 연결을 검증한다.
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
+from celery.exceptions import Retry
+from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.manifest import load_manifest
-from app.models import Plugin, PluginRelease, PluginState, Role, User
+from app.models import Plugin, PluginRelease, PluginState, Role, RunState, TaskRun, User
 from app.security import create_token, hash_password
+from app.worker import run_plugin_task
 
 PLUGIN_SOURCE = Path(__file__).parents[2] / "plugins" / "local-mart-sale"
 
@@ -50,6 +56,14 @@ def viewer_token() -> str:
         return create_token(viewer)
 
 
+def assert_committed_before_enqueue(run_id: str) -> SimpleNamespace:
+    with SessionLocal() as db:
+        run = db.get(TaskRun, run_id)
+        assert run is not None
+        assert run.state == RunState.queued
+    return SimpleNamespace(id="celery-task")
+
+
 def test_sale_resource_draft_publish_and_public_read(client, token):
     install_sale_plugin()
     headers = auth(token)
@@ -71,8 +85,7 @@ def test_sale_resource_draft_publish_and_public_read(client, token):
     assert created.json()["raw_text"] == content_text.replace("\r\n", "\n")
     assert created.json()["items"] == []
 
-    with patch("app.main.run_plugin_task.delay") as delay:
-        delay.return_value.id = "celery-task"
+    with patch("app.main.run_plugin_task.delay", side_effect=assert_committed_before_enqueue) as delay:
         published = client.post(
             f"/api/plugins/local-mart-sale/resources/sales/batches/{batch_id}/publish",
             headers=headers,
@@ -88,6 +101,49 @@ def test_sale_resource_draft_publish_and_public_read(client, token):
     assert public.status_code == 200
     assert public.json()["content_text"] == content_text.replace("\r\n", "\n")
     assert public.json()["items"] == []
+
+
+def test_manual_plugin_task_is_committed_before_enqueue(client, token):
+    install_sale_plugin()
+    with patch("app.main.run_plugin_task.delay", side_effect=assert_committed_before_enqueue):
+        response = client.post(
+            "/api/plugins/local-mart-sale/tasks/send-notification/runs",
+            headers=auth(token),
+            json={"input": {"sale_batch_id": "batch-id", "version": 1}},
+        )
+    assert response.status_code == 202
+    assert response.json()["state"] == "queued"
+    with SessionLocal() as db:
+        run = db.scalar(select(TaskRun).order_by(TaskRun.created_at.desc()))
+        assert run is not None
+        assert run.celery_task_id == "celery-task"
+
+
+def test_plugin_task_enqueue_failure_is_recorded(client, token):
+    install_sale_plugin()
+    with patch("app.main.run_plugin_task.delay", side_effect=RuntimeError("broker unavailable")):
+        response = client.post(
+            "/api/plugins/local-mart-sale/tasks/send-notification/runs",
+            headers=auth(token),
+            json={"input": {"sale_batch_id": "batch-id", "version": 1}},
+        )
+    assert response.status_code == 503
+    with SessionLocal() as db:
+        run = db.scalar(select(TaskRun).order_by(TaskRun.created_at.desc()))
+        assert run is not None
+        assert run.state == RunState.failed
+        assert run.error == "작업 대기열 전송 실패: broker unavailable"
+
+
+def test_worker_retries_when_run_is_not_visible():
+    with (
+        patch.object(run_plugin_task, "retry", side_effect=Retry()) as retry,
+        pytest.raises(Retry),
+    ):
+        run_plugin_task.run("missing-run-id")
+    retry.assert_called_once()
+    assert retry.call_args.kwargs["countdown"] == 1
+    assert retry.call_args.kwargs["max_retries"] == 3
 
 
 def test_admin_resource_requires_authentication(client):

@@ -69,6 +69,32 @@ Operator = Annotated[User, Depends(require_roles(Role.admin, Role.operator))]
 Admin = Annotated[User, Depends(require_roles(Role.admin))]
 
 
+def enqueue_task_run(db: Session, run: TaskRun) -> TaskRun:
+    db.commit()
+    db.refresh(run)
+    try:
+        result = run_plugin_task.delay(run.id)
+    except Exception as exc:
+        run.state = RunState.failed
+        run.error = f"작업 대기열 전송 실패: {exc}"
+        run.finished_at = datetime.now(UTC)
+        write_log(
+            db,
+            run.error,
+            level="ERROR",
+            plugin_id=run.plugin_id,
+            task_id=run.task_name,
+            run_id=run.id,
+            user_id=run.user_id,
+        )
+        db.commit()
+        raise HTTPException(503, "작업 대기열에 연결하지 못했습니다") from exc
+    run.celery_task_id = result.id
+    db.commit()
+    db.refresh(run)
+    return run
+
+
 @app.middleware("http")
 async def log_unhandled_http_errors(request: Request, call_next):
     try:
@@ -343,8 +369,6 @@ async def proxy_plugin_resource(
         )
         db.add(run)
         db.flush()
-        queued = run_plugin_task.delay(run.id)
-        run.celery_task_id = queued.id
         write_log(
             db,
             "플러그인 리소스가 후속 작업을 요청했습니다",
@@ -353,7 +377,8 @@ async def proxy_plugin_resource(
             run_id=run.id,
             user_id=user.id if user else None,
         )
-    if changed or enqueue:
+        enqueue_task_run(db, run)
+    elif changed:
         db.commit()
     return JSONResponse(content=result.get("data"), status_code=status)
 
@@ -549,8 +574,6 @@ def create_run(plugin_id: str, task_name: str, payload: TaskRunRequest, user: Op
     run = TaskRun(plugin_id=plugin_id, task_name=task_name, input=payload.input, user_id=user.id)
     db.add(run)
     db.flush()
-    result = run_plugin_task.delay(run.id)
-    run.celery_task_id = result.id
     write_log(
         db,
         "작업을 대기열에 추가했습니다",
@@ -559,9 +582,7 @@ def create_run(plugin_id: str, task_name: str, payload: TaskRunRequest, user: Op
         run_id=run.id,
         user_id=user.id,
     )
-    db.commit()
-    db.refresh(run)
-    return run
+    return enqueue_task_run(db, run)
 
 
 @app.get("/api/runs", response_model=list[TaskRunView])

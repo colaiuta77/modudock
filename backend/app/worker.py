@@ -120,7 +120,13 @@ def install_plugin(repository_url: str, ref: str, user_id: str | None) -> str:
 def run_plugin_task(self, run_id: str) -> None:
     with SessionLocal.begin() as db:
         run = db.get(TaskRun, run_id)
-        if run is None or run.state == RunState.cancel_requested:
+        if run is None:
+            raise self.retry(
+                exc=RuntimeError("작업 실행 기록이 아직 준비되지 않았습니다"),
+                countdown=1,
+                max_retries=3,
+            )
+        if run.state == RunState.cancel_requested:
             return
         plugin = db.get(Plugin, run.plugin_id)
         release = db.get(PluginRelease, plugin.active_release_id) if plugin else None
