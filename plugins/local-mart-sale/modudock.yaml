@@ -1,7 +1,7 @@
 schema_version: 1
 id: local-mart-sale
 name: 동네마트 당일 세일
-version: 0.1.0
+version: 0.2.0
 platform: ">=0.1,<1"
 menus:
   - id: daily-sales

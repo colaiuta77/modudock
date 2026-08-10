@@ -136,8 +136,10 @@ def parse_price(value: Any, field: str, required: bool = True) -> int | None:
 
 
 def validate_items(raw_items: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw_items, list) or not 1 <= len(raw_items) <= 200:
-        fail("할인 품목은 1개 이상 200개 이하로 입력해 주세요")
+    if raw_items is None or raw_items == []:
+        return []
+    if not isinstance(raw_items, list) or len(raw_items) > 200:
+        fail("할인 품목은 200개 이하로 입력해 주세요")
     items: list[dict[str, Any]] = []
     for index, item in enumerate(raw_items):
         if not isinstance(item, dict):
@@ -243,6 +245,7 @@ def public_batch_view(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any
         "title": row["title"],
         "version": row["version"],
         "published_at": row["published_at"],
+        "content_text": row["raw_text"],
         "items": item_rows(db, row["id"]),
     }
 
@@ -297,7 +300,7 @@ def validate_batch(body: Any) -> tuple[str, str, str, str, list[dict[str, Any]]]
     store_id = str(body.get("store_id") or configured.get("store_id", "main")).strip()
     sale_date = str(body.get("sale_date", "")).strip()
     title = str(body.get("title", "")).strip()
-    raw_text = str(body.get("raw_text", ""))
+    raw_text = str(body.get("raw_text", "")).replace("\r\n", "\n").replace("\r", "\n")
     if not store_id or len(store_id) > 80:
         fail("매장 ID를 확인해 주세요")
     try:
@@ -306,6 +309,10 @@ def validate_batch(body: Any) -> tuple[str, str, str, str, list[dict[str, Any]]]
         fail("행사 날짜는 YYYY-MM-DD 형식이어야 합니다")
     if not title or len(title) > 160:
         fail("제목은 1자 이상 160자 이하로 입력해 주세요")
+    if not raw_text.strip():
+        fail("세일 원문을 입력하거나 TXT 파일을 선택해 주세요")
+    if len(raw_text) > 50_000:
+        fail("세일 원문은 50,000자 이하여야 합니다")
     return store_id, sale_date, title, raw_text, validate_items(body.get("items"))
 
 
@@ -346,8 +353,8 @@ def update_batch(db: sqlite3.Connection, batch_id: str, body: Any) -> None:
 
 def publish_batch(db: sqlite3.Connection, batch_id: str) -> None:
     current = find_batch(db, batch_id)
-    if not item_rows(db, batch_id):
-        fail("게시할 할인 품목이 없습니다", 409)
+    if not current["raw_text"].strip() and not item_rows(db, batch_id):
+        fail("게시할 세일 원문이 없습니다", 409)
     next_version = current["version"] + 1
     timestamp = now()
     db.execute(

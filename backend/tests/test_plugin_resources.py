@@ -53,14 +53,7 @@ def viewer_token() -> str:
 def test_sale_resource_draft_publish_and_public_read(client, token):
     install_sale_plugin()
     headers = auth(token)
-
-    parsed = client.post(
-        "/api/plugins/local-mart-sale/resources/sales/parse",
-        headers=headers,
-        json={"raw_text": "사과 | 3,000 | 1,990 | 1봉 | 한정 수량"},
-    )
-    assert parsed.status_code == 200
-    assert parsed.json()["items"][0]["sale_price"] == 1990
+    content_text = "★한라마트 특급세일★\r\n\r\n○야채\r\n- 파프리카 3개  3,980"
 
     created = client.post(
         "/api/plugins/local-mart-sale/resources/sales/batches",
@@ -69,13 +62,14 @@ def test_sale_resource_draft_publish_and_public_read(client, token):
             "store_id": "main",
             "sale_date": "2026-07-31",
             "title": "오늘의 할인",
-            "raw_text": "사과 | 3,000 | 1,990 | 1봉",
-            "items": parsed.json()["items"],
+            "raw_text": content_text,
         },
     )
     assert created.status_code == 201
     batch_id = created.json()["id"]
     assert created.json()["status"] == "draft"
+    assert created.json()["raw_text"] == content_text.replace("\r\n", "\n")
+    assert created.json()["items"] == []
 
     with patch("app.main.run_plugin_task.delay") as delay:
         delay.return_value.id = "celery-task"
@@ -92,7 +86,8 @@ def test_sale_resource_draft_publish_and_public_read(client, token):
         params={"date": "2026-07-31", "store_id": "main"},
     )
     assert public.status_code == 200
-    assert public.json()["items"][0]["name"] == "사과"
+    assert public.json()["content_text"] == content_text.replace("\r\n", "\n")
+    assert public.json()["items"] == []
 
 
 def test_admin_resource_requires_authentication(client):
@@ -123,10 +118,26 @@ def test_public_resource_rejects_unpublished_batch(client, token):
             "store_id": "main",
             "sale_date": "2026-08-01",
             "title": "초안",
-            "items": [{"name": "우유", "sale_price": 1900, "unit": "1L", "note": ""}],
+            "raw_text": "○유제품\n- 우유 1L  1,900",
         },
     )
     response = client.get(
         f"/api/public/plugins/local-mart-sale/resources/sales/batches/{created.json()['id']}"
     )
     assert response.status_code == 404
+
+
+def test_sale_resource_rejects_empty_content(client, token):
+    install_sale_plugin()
+    response = client.post(
+        "/api/plugins/local-mart-sale/resources/sales/batches",
+        headers=auth(token),
+        json={
+            "store_id": "main",
+            "sale_date": "2026-08-10",
+            "title": "내용 없는 초안",
+            "raw_text": "  \n  ",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "세일 원문을 입력하거나 TXT 파일을 선택해 주세요"
