@@ -43,8 +43,33 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request, p principal
 	raw := randomID() + randomID()
 	meta := TokenMetadata{ID: randomID(), Name: body.Name, Scopes: body.Scopes, ExpiresAt: expiry.UTC().Format(time.RFC3339), CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	scopes, _ := json.Marshal(body.Scopes)
-	_, e = s.db.ExecContext(r.Context(), "INSERT INTO tokens(id,hash,user_id,name,scopes,expires_at,created_at) VALUES(?,?,?,?,?,?,?)", meta.ID, hashToken(raw), p.User.ID, meta.Name, string(scopes), meta.ExpiresAt, meta.CreatedAt)
+	tx, e := s.db.BeginTx(r.Context(), nil)
 	if e != nil {
+		internalError(w)
+		return
+	}
+	defer tx.Rollback()
+	credential := `EXISTS(SELECT 1 FROM sessions WHERE hash=? AND user_id=u.id AND expires_at>?)`
+	credentialID := p.SessionHash
+	if p.TokenID != "" {
+		credential = `EXISTS(SELECT 1 FROM tokens WHERE id=? AND user_id=u.id AND expires_at>?)`
+		credentialID = p.TokenID
+	}
+	result, e := tx.ExecContext(r.Context(), `INSERT INTO tokens(id,hash,user_id,name,scopes,expires_at,created_at) SELECT ?,?,?,?,?,?,? FROM users u WHERE u.id=? AND u.role='admin' AND u.is_active=1 AND `+credential, meta.ID, hashToken(raw), p.User.ID, meta.Name, string(scopes), meta.ExpiresAt, meta.CreatedAt, p.User.ID, credentialID, time.Now().UTC().Format(time.RFC3339))
+	if e != nil {
+		internalError(w)
+		return
+	}
+	created, e := result.RowsAffected()
+	if e != nil {
+		internalError(w)
+		return
+	}
+	if created != 1 {
+		apiError(w, 401, "unauthorized", "Credentials expired or revoked")
+		return
+	}
+	if e = tx.Commit(); e != nil {
 		internalError(w)
 		return
 	}

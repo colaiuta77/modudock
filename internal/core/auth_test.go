@@ -90,6 +90,65 @@ func TestSuccessfulLoginsDoNotConsumeFailureBudget(t *testing.T) {
 		c.login("admin")
 	}
 }
+
+func TestPasswordOperationsShareConcurrencyBudget(t *testing.T) {
+	for _, operation := range []string{"viewer_wrong_password", "viewer_password_change", "user_create", "user_password_reset"} {
+		t.Run(operation, func(t *testing.T) {
+			admin := newClient(t)
+			admin.login("admin")
+			status(t, admin.request("POST", "/api/v1/users", fmt.Sprintf(`{"username":"viewer","password":%q,"role":"viewer"}`, password)), 201)
+			viewer := &client{t: t, s: admin.s}
+			user := viewer.login("viewer")
+			caller := admin
+			method, path, body, want := "PUT", "/api/v1/users/"+user["id"].(string), `{"username":"viewer","role":"viewer","is_active":true,"password":"replacement-password"}`, 200
+			switch operation {
+			case "viewer_wrong_password":
+				caller = viewer
+				path = "/api/v1/auth/password"
+				body = `{"current_password":"incorrect","new_password":"replacement-password"}`
+				want = 403
+			case "viewer_password_change":
+				caller = viewer
+				path = "/api/v1/auth/password"
+				body = fmt.Sprintf(`{"current_password":%q,"new_password":"replacement-password"}`, password)
+				want = 204
+			case "user_create":
+				method = "POST"
+				path = "/api/v1/users"
+				body = fmt.Sprintf(`{"username":"newuser","password":%q,"role":"viewer"}`, password)
+				want = 201
+			}
+			for i := 0; i < cap(admin.s.passwordSlots); i++ {
+				admin.s.passwordSlots <- struct{}{}
+			}
+			response := caller.request(method, path, body)
+			for i := 0; i < cap(admin.s.passwordSlots); i++ {
+				<-admin.s.passwordSlots
+			}
+			status(t, response, 429)
+			if response.Header().Get("Retry-After") == "" {
+				t.Fatal("busy password operation missing retry hint")
+			}
+			status(t, caller.request(method, path, body), want)
+			if len(admin.s.passwordSlots) != 0 {
+				t.Fatal("completed password operation leaked its reservation")
+			}
+		})
+	}
+}
+func TestNonPasswordUserUpdateDoesNotConsumeConcurrencyBudget(t *testing.T) {
+	c := newClient(t)
+	user := c.login("admin")
+	for i := 0; i < cap(c.s.passwordSlots); i++ {
+		c.s.passwordSlots <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(c.s.passwordSlots); i++ {
+			<-c.s.passwordSlots
+		}
+	}()
+	status(t, c.request("PUT", "/api/v1/users/"+user["id"].(string), `{"username":"admin","role":"admin","is_active":true}`), 200)
+}
 func TestPublicOriginAndSecureCookie(t *testing.T) {
 	s, e := Open(t.TempDir(), Options{PublicURL: "https://console.test"})
 	if e != nil {

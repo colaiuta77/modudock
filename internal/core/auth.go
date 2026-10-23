@@ -54,6 +54,16 @@ func checkPassword(password, encoded string) bool {
 	return subtle.ConstantTimeCompare(key, want) == 1
 }
 func validPassword(password string) bool { return len(password) >= 12 && len(password) <= 1024 }
+func (s *Server) reservePassword(w http.ResponseWriter) bool {
+	select {
+	case s.passwordSlots <- struct{}{}:
+		return true
+	default:
+		w.Header().Set("Retry-After", "1")
+		apiError(w, 429, "rate_limited", "Authentication busy")
+		return false
+	}
+}
 func (s *Server) authenticate(r *http.Request) (principal, error) {
 	var p principal
 	var expires, scopes string
@@ -151,14 +161,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 429, "rate_limited", "Login attempt limit reached")
 		return
 	}
-	select {
-	case s.passwordSlots <- struct{}{}:
-		defer func() { <-s.passwordSlots }()
-	default:
+	if !s.reservePassword(w) {
 		s.releaseLogin(r)
-		apiError(w, 429, "rate_limited", "Authentication busy")
 		return
 	}
+	defer func() { <-s.passwordSlots }()
 	var u User
 	var encoded string
 	e := s.db.QueryRowContext(r.Context(), `SELECT id,username,role,is_active,created_at,password_hash FROM users WHERE username=?`, body.Username).Scan(&u.ID, &u.Username, &u.Role, &u.IsActive, &u.CreatedAt, &encoded)
@@ -235,6 +242,10 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, p princi
 		apiError(w, 400, "invalid_input", "Password must contain 12 to 1024 bytes")
 		return
 	}
+	if !s.reservePassword(w) {
+		return
+	}
+	defer func() { <-s.passwordSlots }()
 	var old string
 	if e := s.db.QueryRowContext(r.Context(), "SELECT password_hash FROM users WHERE id=?", p.User.ID).Scan(&old); e != nil {
 		internalError(w)
@@ -287,6 +298,8 @@ func (s *Server) CreateAdmin(username, password string) error {
 	if !validUsername(username) || !validPassword(password) {
 		return fmt.Errorf("username must be 1-64 ASCII letters, digits, dots, underscores or hyphens; password 12-1024 bytes")
 	}
+	s.passwordSlots <- struct{}{}
+	defer func() { <-s.passwordSlots }()
 	_, e := s.db.Exec("INSERT INTO users(id,username,password_hash,role,created_at) VALUES(?,?,?,'admin',?)", randomID(), username, hashPassword(password), time.Now().UTC().Format(time.RFC3339))
 	return e
 }

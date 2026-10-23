@@ -81,6 +81,10 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request, p principal)
 		apiError(w, 400, "invalid_input", "Invalid username, password or role")
 		return
 	}
+	if !s.reservePassword(w) {
+		return
+	}
+	defer func() { <-s.passwordSlots }()
 	u := User{ID: randomID(), Username: body.Username, Role: body.Role, IsActive: true, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	_, e := s.db.ExecContext(r.Context(), "INSERT INTO users(id,username,password_hash,role,created_at) VALUES(?,?,?,?,?)", u.ID, u.Username, hashPassword(body.Password), u.Role, u.CreatedAt)
 	if e != nil {
@@ -115,6 +119,10 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request, p principal)
 	}
 	encoded := ""
 	if password != nil {
+		if !s.reservePassword(w) {
+			return
+		}
+		defer func() { <-s.passwordSlots }()
 		encoded = hashPassword(*password)
 	}
 	id := r.PathValue("id")
