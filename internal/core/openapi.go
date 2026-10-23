@@ -50,6 +50,7 @@ func (s *Server) apiDocument() map[string]any {
 	schemas["Log"] = objectSchema(logProperties, logFields...)
 	schemas["LogList"] = objectSchema(map[string]any{"items": arraySchema(schemaRef("Log")), "total": integer}, "items", "total")
 	operations := []apiOperation{{"/auth/login", "post", "Login", "Auth", "200", "", ""}, {"/auth/me", "get", "", "Auth", "200", "viewer", ""}, {"/auth/logout", "post", "", "", "204", "viewer", ""}, {"/auth/password", "put", "PasswordChange", "", "204", "viewer", "users:write"}, {"/users", "get", "", "UserList", "200", "admin", "users:write"}, {"/users", "post", "UserCreate", "User", "201", "admin", "users:write"}, {"/users/{id}", "put", "UserUpdate", "User", "200", "admin", "users:write"}, {"/users/{id}", "delete", "", "", "204", "admin", "users:write"}, {"/tokens", "get", "", "TokenList", "200", "admin", "tokens:write"}, {"/tokens", "post", "TokenCreate", "TokenCreated", "201", "admin", "tokens:write"}, {"/tokens/{id}", "delete", "", "", "204", "admin", "tokens:write"}, {"/status", "get", "", "Status", "200", "viewer", "status:read"}, {"/logs", "get", "", "LogList", "200", "operator", "logs:read"}, {"/events", "get", "", "", "200", "viewer", "status:read"}, {"/openapi.json", "get", "", "", "200", "viewer", ""}, {"/healthz", "get", "", "Health", "200", "", ""}}
+	operations = append(operations, pluginAPISchemas(schemas)...)
 	paths := map[string]any{}
 	for _, definition := range operations {
 		success := map[string]any{"description": "Success"}
@@ -57,7 +58,7 @@ func (s *Server) apiDocument() map[string]any {
 			success["content"] = map[string]any{"application/json": map[string]any{"schema": schemaRef(definition.response)}}
 		}
 		responses := map[string]any{definition.status: success}
-		for _, code := range []string{"400", "401", "403", "404", "409", "413", "415", "429", "500"} {
+		for _, code := range []string{"400", "401", "403", "404", "405", "409", "413", "415", "429", "500", "502", "503"} {
 			responses[code] = map[string]any{"description": "API error", "content": map[string]any{"application/json": map[string]any{"schema": schemaRef("Error")}}}
 		}
 		operation := map[string]any{"responses": responses, "x-minimum-role": definition.role, "x-required-scope": definition.scope}
@@ -71,10 +72,15 @@ func (s *Server) apiDocument() map[string]any {
 			operation["requestBody"] = map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": schemaRef(definition.body)}}}
 		}
 		parameters := []any{}
-		if strings.Contains(definition.path, "{id}") {
-			parameters = append(parameters, map[string]any{"name": "id", "in": "path", "required": true, "schema": text})
+		for _, part := range strings.Split(definition.path, "/") {
+			if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+				parameters = append(parameters, map[string]any{"name": strings.Trim(part, "{}"), "in": "path", "required": true, "schema": text})
+			}
 		}
-		if definition.method == "get" && (definition.path == "/users" || definition.path == "/tokens" || definition.path == "/logs") {
+		if definition.path == "/plugins/{id}/tasks/{task_id}/runs" {
+			parameters = append(parameters, map[string]any{"name": "Idempotency-Key", "in": "header", "description": "Requester-scoped key; identical payload returns the same run, different payload returns 409", "schema": map[string]any{"type": "string", "maxLength": 200}})
+		}
+		if definition.method == "get" && (definition.path == "/users" || definition.path == "/tokens" || definition.path == "/logs" || definition.response == "PluginList" || definition.response == "ReleaseList" || definition.response == "MenuList" || definition.response == "RunList" || definition.response == "ScheduleList") {
 			parameters = append(parameters, map[string]any{"name": "limit", "in": "query", "schema": map[string]any{"type": "integer", "default": 50, "minimum": 1, "maximum": 200}}, map[string]any{"name": "offset", "in": "query", "schema": map[string]any{"type": "integer", "default": 0, "minimum": 0}})
 		}
 		if definition.path == "/logs" {
@@ -102,4 +108,54 @@ func (s *Server) apiDocument() map[string]any {
 		entry[definition.method] = operation
 	}
 	return map[string]any{"openapi": "3.1.0", "info": map[string]string{"title": "ModuDock Go API", "version": s.options.Version}, "servers": []map[string]string{{"url": "/api/v1"}}, "paths": paths, "security": []map[string][]string{{"session": {}}, {"bearer": {}}}, "components": map[string]any{"schemas": schemas, "securitySchemes": map[string]any{"session": map[string]any{"type": "apiKey", "in": "cookie", "name": cookieName}, "bearer": map[string]any{"type": "http", "scheme": "bearer"}}}}
+}
+
+func pluginAPISchemas(schemas map[string]any) []apiOperation {
+	text := map[string]any{"type": "string"}
+	integer := map[string]any{"type": "integer", "minimum": 0}
+	boolean := map[string]any{"type": "boolean"}
+	date := map[string]any{"type": "string", "format": "date-time"}
+	object := map[string]any{"type": "object", "additionalProperties": true}
+	artifact := objectSchema(map[string]any{"url": map[string]any{"type": "string", "format": "uri"}, "sha256": map[string]any{"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}, "executable": text}, "url", "sha256", "executable")
+	task := objectSchema(map[string]any{"id": text, "title": text, "input_schema": object, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 3600}, "idempotent": boolean}, "id", "title", "input_schema", "timeout_seconds", "idempotent")
+	resource := objectSchema(map[string]any{"id": text, "methods": arraySchema(map[string]any{"type": "string", "enum": []string{"GET", "POST", "PUT", "DELETE"}}), "input_schema": object, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 60}}, "id", "methods", "input_schema", "timeout_seconds")
+	menuDeclaration := objectSchema(map[string]any{"id": text, "title": text, "icon": text, "resource": text}, "id", "title", "icon")
+	schemas["Manifest"] = objectSchema(map[string]any{"schema_version": map[string]any{"const": 1}, "protocol_version": map[string]any{"const": 1}, "core_api": map[string]any{"const": 1}, "id": map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}, "name": text, "version": text, "data_schema_version": map[string]any{"type": "integer", "minimum": 1}, "artifacts": map[string]any{"type": "object", "additionalProperties": artifact}, "tasks": arraySchema(task), "resources": arraySchema(resource), "menus": arraySchema(menuDeclaration), "settings_schema": object}, "schema_version", "protocol_version", "core_api", "id", "name", "version", "data_schema_version", "artifacts")
+	schemas["Plugin"] = objectSchema(map[string]any{"id": text, "name": text, "version": text, "state": map[string]any{"type": "string", "enum": []string{"active", "disabled"}}, "repository_url": text, "active_release_id": text, "manifest": schemaRef("Manifest")}, "id", "name", "version", "state", "repository_url", "active_release_id", "manifest")
+	schemas["Release"] = objectSchema(map[string]any{"id": text, "version": text, "commit_sha": text, "data_schema_version": map[string]any{"type": "integer", "minimum": 1}, "created_at": date}, "id", "version", "commit_sha", "data_schema_version", "created_at")
+	schemas["Menu"] = objectSchema(map[string]any{"plugin_id": text, "plugin_name": text, "id": text, "title": text, "icon": text, "position": integer, "enabled": boolean}, "plugin_id", "plugin_name", "id", "title", "icon", "position", "enabled")
+	schemas["Run"] = objectSchema(map[string]any{"id": text, "plugin_id": text, "release_id": text, "task_id": text, "state": map[string]any{"type": "string", "enum": []string{"queued", "running", "succeeded", "failed", "cancelled", "interrupted"}}, "progress": map[string]any{"type": "integer", "minimum": 0, "maximum": 100}, "created_at": date, "started_at": text, "finished_at": text, "error": text, "input": object, "result": object}, "id", "plugin_id", "release_id", "task_id", "state", "progress", "created_at", "started_at", "finished_at", "error")
+	scheduleFields := map[string]any{"name": text, "plugin_id": text, "task_id": text, "cron": map[string]any{"type": "string", "description": "Five fields: minute hour day-of-month month day-of-week"}, "timezone": map[string]any{"type": "string", "description": "IANA timezone, e.g. Asia/Seoul or UTC"}, "input": object, "enabled": boolean}
+	schemas["ScheduleWrite"] = objectSchema(scheduleFields, "name", "plugin_id", "task_id", "cron", "timezone", "input", "enabled")
+	readFields := map[string]any{}
+	for key, value := range scheduleFields {
+		readFields[key] = value
+	}
+	readFields["id"] = text
+	readFields["next_run_at"] = date
+	readFields["last_run_at"] = text
+	schemas["Schedule"] = objectSchema(readFields, "id", "name", "plugin_id", "task_id", "cron", "timezone", "input", "enabled", "next_run_at", "last_run_at")
+	for _, name := range []string{"Plugin", "Release", "Menu", "Run", "Schedule"} {
+		schemas[name+"List"] = objectSchema(map[string]any{"items": arraySchema(schemaRef(name)), "total": integer}, "items", "total")
+	}
+	schemas["PluginInstall"] = objectSchema(map[string]any{"repository_url": text, "ref": text}, "repository_url", "ref")
+	schemas["PluginUpdate"] = objectSchema(map[string]any{"ref": text}, "ref")
+	schemas["PluginActivate"] = objectSchema(map[string]any{"release_id": text}, "release_id")
+	schemas["PluginState"] = objectSchema(map[string]any{"enabled": boolean}, "enabled")
+	schemas["Settings"] = object
+	schemas["ResourceData"] = object
+	schemas["RunCreate"] = objectSchema(map[string]any{"input": object}, "input")
+	schemas["MenuUpdate"] = objectSchema(map[string]any{"title": text, "position": integer, "enabled": boolean}, "title", "position", "enabled")
+	operations := []apiOperation{
+		{"/plugins", "get", "", "PluginList", "200", "viewer", "plugins:read"}, {"/plugins/{id}", "get", "", "Plugin", "200", "viewer", "plugins:read"}, {"/plugins/install", "post", "PluginInstall", "Plugin", "201", "admin", "plugins:write"}, {"/plugins/{id}/update", "post", "PluginUpdate", "Plugin", "200", "admin", "plugins:write"}, {"/plugins/{id}/releases", "get", "", "ReleaseList", "200", "admin", "plugins:read"}, {"/plugins/{id}/activate", "post", "PluginActivate", "Plugin", "200", "admin", "plugins:write"}, {"/plugins/{id}/state", "put", "PluginState", "Plugin", "200", "admin", "plugins:write"}, {"/plugins/{id}/settings", "get", "", "Settings", "200", "admin", "plugins:read"}, {"/plugins/{id}/settings", "put", "Settings", "Settings", "200", "admin", "plugins:write"},
+		{"/menus", "get", "", "MenuList", "200", "viewer", "plugins:read"}, {"/menus/{plugin_id}/{menu_id}", "put", "MenuUpdate", "Menu", "200", "admin", "plugins:write"}, {"/runs", "get", "", "RunList", "200", "viewer", "runs:read"}, {"/runs/{id}", "get", "", "Run", "200", "viewer", "runs:read"}, {"/plugins/{id}/tasks/{task_id}/runs", "post", "RunCreate", "Run", "201", "operator", "runs:write"}, {"/runs/{id}/cancel", "post", "", "Run", "200", "operator", "runs:write"}, {"/schedules", "get", "", "ScheduleList", "200", "operator", "schedules:read"}, {"/schedules", "post", "ScheduleWrite", "Schedule", "201", "operator", "schedules:write"}, {"/schedules/{id}", "put", "ScheduleWrite", "Schedule", "200", "operator", "schedules:write"}, {"/schedules/{id}", "delete", "", "", "204", "operator", "schedules:write"},
+	}
+	for _, method := range []string{"get", "post", "put", "delete"} {
+		role, scope, body := "operator", "plugins:write", "ResourceData"
+		if method == "get" {
+			role, scope, body = "viewer", "plugins:read", ""
+		}
+		operations = append(operations, apiOperation{"/plugins/{id}/resources/{resource}", method, body, "ResourceData", "200", role, scope})
+	}
+	return operations
 }

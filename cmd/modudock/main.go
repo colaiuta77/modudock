@@ -58,6 +58,9 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return e
 		}
 		defer s.Close()
+		if e = s.StartBackground(); e != nil {
+			return e
+		}
 		server := &http.Server{Addr: *listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

@@ -61,7 +61,7 @@ func (s *Server) openDB() error {
 		s.Close()
 		return e
 	}
-	if version > 1 {
+	if version > 2 {
 		s.Close()
 		return fmt.Errorf("unsupported database version %d", version)
 	}
@@ -81,9 +81,36 @@ func (s *Server) openDB() error {
 			return e
 		}
 	}
+	if version < 2 {
+		tx, e := s.db.Begin()
+		if e != nil {
+			s.Close()
+			return e
+		}
+		if _, e = tx.Exec(pluginSchema); e != nil {
+			tx.Rollback()
+			s.Close()
+			return e
+		}
+		if e = tx.Commit(); e != nil {
+			s.Close()
+			return e
+		}
+	}
 	if e = os.Chmod(filepath.Join(dir, "core.db"), 0600); e != nil {
 		s.Close()
 		return e
 	}
 	return nil
 }
+
+const pluginSchema = `CREATE TABLE releases(id TEXT PRIMARY KEY,plugin_id TEXT NOT NULL,version TEXT NOT NULL,commit_sha TEXT NOT NULL,data_schema_version INTEGER NOT NULL CHECK(data_schema_version>=1),created_at TEXT NOT NULL,manifest TEXT NOT NULL,executable TEXT NOT NULL);
+CREATE INDEX releases_plugin ON releases(plugin_id);
+CREATE TABLE plugins(id TEXT PRIMARY KEY,state TEXT NOT NULL CHECK(state IN ('active','disabled')),repository_url TEXT NOT NULL,active_release_id TEXT NOT NULL REFERENCES releases(id),settings TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE menus(plugin_id TEXT NOT NULL REFERENCES plugins(id),id TEXT NOT NULL,title TEXT NOT NULL,icon TEXT NOT NULL,position INTEGER NOT NULL,enabled INTEGER NOT NULL,PRIMARY KEY(plugin_id,id));
+CREATE TABLE runs(id TEXT PRIMARY KEY,plugin_id TEXT NOT NULL REFERENCES plugins(id),release_id TEXT NOT NULL REFERENCES releases(id),task_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('queued','running','succeeded','failed','cancelled','interrupted')),progress INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,started_at TEXT NOT NULL DEFAULT '',finished_at TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',input TEXT NOT NULL,result TEXT NOT NULL DEFAULT '{}',user_id TEXT NOT NULL,idempotency_key TEXT,payload TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at TEXT NOT NULL,schedule_id TEXT NOT NULL DEFAULT '',scheduled_at TEXT NOT NULL DEFAULT '',UNIQUE(user_id,idempotency_key));
+CREATE INDEX runs_queue ON runs(state,next_attempt_at,created_at);
+CREATE INDEX runs_schedule ON runs(schedule_id,state);
+CREATE TABLE schedules(id TEXT PRIMARY KEY,name TEXT NOT NULL,plugin_id TEXT NOT NULL REFERENCES plugins(id),task_id TEXT NOT NULL,cron TEXT NOT NULL,timezone TEXT NOT NULL,input TEXT NOT NULL,enabled INTEGER NOT NULL,next_run_at TEXT NOT NULL,last_run_at TEXT NOT NULL DEFAULT '',user_id TEXT NOT NULL);
+CREATE TABLE schedule_slots(schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,scheduled_at TEXT NOT NULL,run_id TEXT NOT NULL DEFAULT '',outcome TEXT NOT NULL,PRIMARY KEY(schedule_id,scheduled_at));
+PRAGMA user_version=2;`

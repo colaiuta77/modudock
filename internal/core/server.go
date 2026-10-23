@@ -24,22 +24,30 @@ type Options struct {
 	WebFS              fs.FS
 }
 type Server struct {
-	db            *sql.DB
-	dataDir       string
-	options       Options
-	mux           *http.ServeMux
-	lock          *flock.Flock
-	started       time.Time
-	logs          *logStore
-	loginMu       sync.Mutex
-	attempts      map[string]loginAttempt
-	passwordSlots chan struct{}
-	eventMu       sync.Mutex
-	subscribers   map[chan struct{}]struct{}
-	done          chan struct{}
-	closeOnce     sync.Once
-	closeErr      error
-	workers       sync.WaitGroup
+	db                *sql.DB
+	dataDir           string
+	options           Options
+	mux               *http.ServeMux
+	lock              *flock.Flock
+	started           time.Time
+	logs              *logStore
+	loginMu           sync.Mutex
+	attempts          map[string]loginAttempt
+	passwordSlots     chan struct{}
+	eventMu           sync.Mutex
+	subscribers       map[chan struct{}]struct{}
+	done              chan struct{}
+	closeOnce         sync.Once
+	closeErr          error
+	workers           sync.WaitGroup
+	pluginHTTP        *http.Client
+	resourceSlots     chan struct{}
+	jobWake           chan struct{}
+	backgroundMu      sync.Mutex
+	backgroundStarted bool
+	backgroundCancel  context.CancelFunc
+	jobMu             sync.Mutex
+	jobCancels        map[string]context.CancelFunc
 }
 type principal struct {
 	User                       User
@@ -58,6 +66,10 @@ func Open(dataDir string, options Options) (*Server, error) {
 		options.PublicURL = strings.TrimSuffix(options.PublicURL, "/")
 	}
 	s := &Server{dataDir: dataDir, options: options, mux: http.NewServeMux(), started: time.Now().UTC(), attempts: map[string]loginAttempt{}, passwordSlots: make(chan struct{}, 2), subscribers: map[chan struct{}]struct{}{}, done: make(chan struct{})}
+	s.pluginHTTP = githubClient()
+	s.resourceSlots = make(chan struct{}, 4)
+	s.jobWake = make(chan struct{}, 2)
+	s.jobCancels = map[string]context.CancelFunc{}
 	if e := s.openDB(); e != nil {
 		return nil, e
 	}
@@ -100,7 +112,12 @@ func (s *Server) credentialJanitor() {
 }
 func (s *Server) Close() error {
 	s.closeOnce.Do(func() {
+		s.backgroundMu.Lock()
 		close(s.done)
+		if s.backgroundCancel != nil {
+			s.backgroundCancel()
+		}
+		s.backgroundMu.Unlock()
 		s.workers.Wait()
 		if s.logs != nil {
 			s.closeErr = s.logs.Close()
@@ -163,6 +180,9 @@ func (s *Server) registerRoutes() {
 	s.route("GET /api/v1/logs", "operator", "logs:read", s.listLogs)
 	s.route("GET /api/v1/events", "viewer", "status:read", s.events)
 	s.route("GET /api/v1/openapi.json", "viewer", "", s.openapi)
+	s.registerPluginRoutes()
+	s.registerJobRoutes()
+	s.registerScheduleRoutes()
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { apiError(w, 404, "not_found", "API route not found") })
 	s.mux.Handle("/", web.Handler(s.options.WebFS))
 }
@@ -232,7 +252,22 @@ func (s *Server) validOrigin(r *http.Request) bool {
 	return r.Header.Get("Origin") == expected
 }
 func (s *Server) status(w http.ResponseWriter, r *http.Request, p principal) {
-	writeJSON(w, 200, map[string]any{"version": s.options.Version, "started_at": s.started.Format(time.RFC3339), "plugins_active": 0, "runs_queued": 0, "runs_running": 0, "runs_succeeded": 0, "runs_failed": 0})
+	counts := map[string]any{"version": s.options.Version, "started_at": s.started.Format(time.RFC3339)}
+	var active int
+	if e := s.db.QueryRow("SELECT count(*) FROM plugins WHERE state='active'").Scan(&active); e != nil {
+		internalError(w)
+		return
+	}
+	counts["plugins_active"] = active
+	for _, state := range []string{"queued", "running", "succeeded", "failed"} {
+		var n int
+		if e := s.db.QueryRow("SELECT count(*) FROM runs WHERE state=?", state).Scan(&n); e != nil {
+			internalError(w)
+			return
+		}
+		counts["runs_"+state] = n
+	}
+	writeJSON(w, 200, counts)
 }
 func (s *Server) notify() {
 	s.eventMu.Lock()

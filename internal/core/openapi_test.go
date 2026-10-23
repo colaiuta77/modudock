@@ -3,6 +3,7 @@ package core
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,49 @@ func TestOpenAPIAuthenticationContract(t *testing.T) {
 	}
 	if doc.Components["securitySchemes"] == nil {
 		t.Fatal("security schemes missing")
+	}
+}
+func TestOpenAPIPluginQueueScheduleContract(t *testing.T) {
+	c := newClient(t)
+	doc := c.s.apiDocument()
+	paths := doc["paths"].(map[string]any)
+	for _, tc := range []struct{ path, method, status string }{
+		{"/plugins/install", "post", "201"}, {"/plugins/{id}/update", "post", "200"}, {"/plugins/{id}/activate", "post", "200"}, {"/plugins/{id}/releases", "get", "200"}, {"/plugins/{id}/settings", "put", "200"}, {"/menus/{plugin_id}/{menu_id}", "put", "200"}, {"/plugins/{id}/tasks/{task_id}/runs", "post", "201"}, {"/runs/{id}/cancel", "post", "200"}, {"/schedules", "post", "201"}, {"/schedules/{id}", "put", "200"}, {"/plugins/{id}/resources/{resource}", "get", "200"},
+	} {
+		path, ok := paths[tc.path].(map[string]any)
+		if !ok {
+			t.Errorf("missing path %s", tc.path)
+			continue
+		}
+		op, ok := path[tc.method].(map[string]any)
+		if !ok {
+			t.Errorf("missing operation %s %s", tc.method, tc.path)
+			continue
+		}
+		responses := op["responses"].(map[string]any)
+		if responses[tc.status] == nil {
+			t.Errorf("missing success %s %s", tc.status, tc.path)
+		}
+		params, _ := op["parameters"].([]any)
+		for _, name := range []string{"plugin_id", "menu_id", "task_id", "resource"} {
+			if strings.Contains(tc.path, "{"+name+"}") {
+				found := false
+				for _, param := range params {
+					p := param.(map[string]any)
+					if p["name"] == name && p["in"] == "path" {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("undocumented path parameter %s %s", tc.path, name)
+				}
+			}
+		}
+	}
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, name := range []string{"Manifest", "Plugin", "Run", "Schedule", "Menu", "Release"} {
+		if schemas[name] == nil {
+			t.Errorf("missing schema %s", name)
+		}
 	}
 }
