@@ -1,0 +1,26 @@
+[Unit]
+Description=ModuDock Go automation platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=modudock
+Group=modudock
+StateDirectory=modudock
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/modudock
+ExecStart=/usr/local/bin/modudock serve --data-dir /var/lib/modudock --listen 127.0.0.1:7438
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

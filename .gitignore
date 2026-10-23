@@ -5,6 +5,7 @@ test-data/
 dist/
 node_modules/
 frontend/dist/
+frontend/public/third-party-notices.txt
 internal/web/dist/*
 !internal/web/dist/.gitkeep
 *.tsbuildinfo
