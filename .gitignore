@@ -1,0 +1,14 @@
+.tools/
+.superpowers/
+data/
+test-data/
+dist/
+node_modules/
+frontend/dist/
+internal/web/dist/*
+!internal/web/dist/.gitkeep
+*.tsbuildinfo
+*.exe
+*.log
+.env
+.DS_Store
