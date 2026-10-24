@@ -34,7 +34,7 @@ export type Manifest = {
   id: string;
   name: string;
   version: string;
-  tasks: Task[];
+  tasks?: Task[];
   resources?: { id: string; methods: string[] }[];
   menus?: { id: string; title: string; icon: string; resource?: string }[];
   settings_schema?: Schema;

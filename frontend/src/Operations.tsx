@@ -219,6 +219,10 @@ export function SchedulesPage({ notify, changed }: PageProps) {
   const schedules = useLoad<List<Schedule>>(`/schedules?offset=${offset}`),
     plugins = useLoad<List<Plugin>>("/plugins?limit=200");
   const { busy, perform } = useAction(notify);
+  const taskPlugins =
+    plugins.data?.items.filter(
+      (p) => p.state === "active" && p.manifest.tasks?.length,
+    ) || [];
   const plugin = plugins.data?.items.find((p) => p.id === pluginId);
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -252,9 +256,7 @@ export function SchedulesPage({ notify, changed }: PageProps) {
         <Button
           onClick={() => {
             setEditing(null);
-            setPluginId(
-              plugins.data?.items.find((p) => p.state === "active")?.id || "",
-            );
+            setPluginId(taskPlugins[0]?.id || "");
             setOpen(true);
           }}
         >
@@ -264,7 +266,10 @@ export function SchedulesPage({ notify, changed }: PageProps) {
       }
     >
       <ErrorBox message={schedules.error || plugins.error} />
-      {open && (
+      {open && !taskPlugins.length && (
+        <p className="muted">작업이 있는 활성 플러그인이 필요합니다.</p>
+      )}
+      {open && taskPlugins.length > 0 && (
         <form
           className="edit-panel stack"
           key={editing?.id || "new"}
@@ -298,13 +303,11 @@ export function SchedulesPage({ notify, changed }: PageProps) {
                 onChange={(e) => setPluginId(e.target.value)}
               >
                 <option value="">선택</option>
-                {plugins.data?.items
-                  .filter((p) => p.state === "active")
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
+                {taskPlugins.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="작업">
@@ -316,7 +319,7 @@ export function SchedulesPage({ notify, changed }: PageProps) {
                   editing?.plugin_id === pluginId ? editing.task_id : undefined
                 }
               >
-                {plugin?.manifest.tasks.map((t) => (
+                {plugin?.manifest.tasks?.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.title}
                   </option>
