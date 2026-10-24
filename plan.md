@@ -77,4 +77,4 @@
 - [x] 비root multi-stage image·AMD64/ARM64·영속 volume·systemd 예제·DSM 부팅 작업 및 중지/백업/업데이트 절차를 작성한다. 관리자 생성은 서비스 중지 후 one-shot CLI로 실행한다.
 - [x] GitHub Actions는 PR/branch에서 검사·빌드, v* 태그에서 바이너리 checksum·GHCR image를 배포하도록 설정한다. 실제 원격 게시하지 않는다.
 - [x] OpenAPI 계약과 실제 API·UI를 통합 검증한다. 새 데이터에서 로그인→예제 plugin→작업→스케줄→재시작 복구, Docker 동일 경로, native health를 확인한다.
-- [ ] 독립 리뷰 후 중요한 결함을 고치고 테스트·빌드·취약점 검사를 재실행한다. 확인한 환경과 미확인 NAS 제한을 문서에 기록하고 로컬 커밋한다.
+- [x] 독립 리뷰 후 중요한 결함을 고치고 테스트·빌드·취약점 검사를 재실행한다. 확인한 환경과 미확인 NAS 제한을 문서에 기록하고 로컬 커밋한다.
