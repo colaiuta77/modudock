@@ -1,6 +1,6 @@
 // 실제 API 클라이언트의 CSRF 전달과 오류 응답 처리를 검증한다.
 import { afterEach, expect, it, vi } from "vitest";
-import { request, signIn } from "./api";
+import { request, signIn, signOut } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -51,3 +51,35 @@ it("본문 없는 삭제 응답을 처리한다", async () => {
     request("/tokens/t", { method: "DELETE" }),
   ).resolves.toBeUndefined();
 });
+
+it.each(["/users", "/auth/logout"])(
+  "%s의 401 뒤 CSRF 토큰을 재사용하지 않는다",
+  async (path) => {
+    let sentToken: string | null = null;
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/auth/login"))
+        return Response.json({
+          user: {
+            id: "u",
+            username: "admin",
+            role: "admin",
+            is_active: true,
+            created_at: "2026-10-23T00:00:00Z",
+          },
+          csrf_token: "old-csrf",
+        });
+      if (url.endsWith(path))
+        return Response.json(
+          { error: { code: "unauthorized", message: "세션 만료" } },
+          { status: 401 },
+        );
+      sentToken = new Headers(init?.headers).get("X-CSRF-Token");
+      return new Response(null, { status: 204 });
+    });
+    await signIn("admin", "password");
+    if (path === "/auth/logout") await signOut().catch(() => {});
+    else await request(path).catch(() => {});
+    await request("/tokens/t", { method: "DELETE" });
+    expect(sentToken).toBeNull();
+  },
+);

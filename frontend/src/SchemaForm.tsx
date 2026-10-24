@@ -23,6 +23,17 @@ export function SchemaForm({
   const [values, setValues] = useState<Record<string, unknown>>(() =>
     Object.fromEntries([
       ...Object.entries(properties)
+        .filter(
+          ([key, p]) =>
+            schema.required?.includes(key) &&
+            !p.enum &&
+            ["boolean", "object", "array"].includes(p.type || ""),
+        )
+        .map(([key, p]) => [
+          key,
+          p.type === "boolean" ? false : p.type === "array" ? [] : {},
+        ]),
+      ...Object.entries(properties)
         .filter(([, p]) => p.default !== undefined)
         .map(([k, p]) => [k, p.default]),
       ...Object.entries(initial),

@@ -4,6 +4,73 @@ import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { SchemaForm } from "./SchemaForm";
 
+it("필수 boolean/object/array의 표시 기본값을 편집 없이 제출한다", async () => {
+  let result: unknown;
+  render(
+    <SchemaForm
+      schema={{
+        type: "object",
+        required: ["enabled", "options", "entries"],
+        properties: {
+          enabled: { type: "boolean", title: "사용" },
+          options: { type: "object", title: "옵션" },
+          entries: { type: "array", title: "항목" },
+          optional: { type: "boolean", title: "선택 사항" },
+        },
+      }}
+      onSubmit={async (value) => {
+        result = value;
+      }}
+    />,
+  );
+  expect((screen.getByLabelText("사용") as HTMLInputElement).checked).toBe(
+    false,
+  );
+  expect((screen.getByLabelText("옵션") as HTMLTextAreaElement).value).toBe(
+    "{}",
+  );
+  expect((screen.getByLabelText("항목") as HTMLTextAreaElement).value).toBe(
+    "[]",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(result).toEqual({ enabled: false, options: {}, entries: [] });
+});
+
+it("필수 필드의 명시된 default와 initial을 표시하고 그대로 제출한다", async () => {
+  let result: unknown;
+  render(
+    <SchemaForm
+      schema={{
+        required: ["enabled", "options", "entries"],
+        properties: {
+          enabled: { type: "boolean", title: "사용", default: true },
+          options: { type: "object", title: "옵션", default: { count: 2 } },
+          entries: { type: "array", title: "항목", default: ["default"] },
+        },
+      }}
+      initial={{ entries: ["saved"] }}
+      onSubmit={async (value) => {
+        result = value;
+      }}
+    />,
+  );
+  expect((screen.getByLabelText("사용") as HTMLInputElement).checked).toBe(
+    true,
+  );
+  expect(
+    JSON.parse((screen.getByLabelText("옵션") as HTMLTextAreaElement).value),
+  ).toEqual({ count: 2 });
+  expect(
+    JSON.parse((screen.getByLabelText("항목") as HTMLTextAreaElement).value),
+  ).toEqual(["saved"]);
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(result).toEqual({
+    enabled: true,
+    options: { count: 2 },
+    entries: ["saved"],
+  });
+});
+
 it("사용자가 편집하지 않은 비밀값을 그대로 보존한다", async () => {
   let result: unknown;
   render(

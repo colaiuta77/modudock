@@ -33,8 +33,13 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function serve(role = "admin") {
-  vi.stubGlobal("fetch", async (path: string) => {
+function serve(
+  role = "admin",
+  reply?: (path: string, init?: RequestInit) => Response | undefined,
+) {
+  vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
+    const response = reply?.(path, init);
+    if (response) return response;
     if (path.endsWith("/auth/me"))
       return Response.json({ user: { ...admin, role }, csrf_token: "csrf" });
     if (path.endsWith("/status"))
@@ -113,4 +118,163 @@ it("모바일 메뉴에서 이동하면 서랍이 닫힌다", async () => {
   expect(
     screen.getByRole("heading", { name: "작업 이력", level: 1 }),
   ).toBeTruthy();
+});
+
+it.each(["admin", "operator"])(
+  "%s는 메뉴 없는 플러그인 목록에서 작업 공간에 들어가 실행한다",
+  async (role) => {
+    const plugin = {
+      id: "tasks-only",
+      name: "작업 전용",
+      version: "1.0.0",
+      state: "active",
+      repository_url: "https://github.com/example/tasks-only",
+      active_release_id: "release-1",
+      manifest: {
+        id: "tasks-only",
+        name: "작업 전용",
+        version: "1.0.0",
+        data_schema_version: 1,
+        tasks: [
+          {
+            id: "sync",
+            title: "동기화",
+            input_schema: { type: "object" },
+            timeout_seconds: 60,
+            idempotent: true,
+          },
+        ],
+      },
+    };
+    let submitted: unknown;
+    serve(role, (path, init) => {
+      if (path.includes("/plugins?"))
+        return Response.json({ items: [plugin], total: 1 });
+      if (path.endsWith("/plugins/tasks-only")) return Response.json(plugin);
+      if (path.endsWith("/tasks/sync/runs")) {
+        submitted = JSON.parse(String(init?.body));
+        return Response.json({
+          id: "run-1",
+          plugin_id: plugin.id,
+          release_id: "release-1",
+          task_id: "sync",
+          state: "queued",
+          progress: 0,
+          created_at: "2026-10-23T00:00:00Z",
+          started_at: null,
+          finished_at: null,
+        });
+      }
+    });
+    render(<App />);
+    const nav = await screen.findByRole("navigation", {
+      name: "주 내비게이션",
+    });
+    await userEvent.click(
+      within(nav).getByRole("button", { name: "플러그인" }),
+    );
+    if (role === "operator") {
+      expect(
+        screen.queryByRole("heading", { name: "GitHub에서 설치" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "관리" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "비활성화" })).toBeNull();
+    }
+    await userEvent.click(
+      await screen.findByRole("button", { name: "작업 공간" }),
+    );
+    await screen.findByRole("heading", { name: "동기화" });
+    await userEvent.click(screen.getByRole("button", { name: "작업 실행" }));
+    expect(await screen.findByText("run-1")).toBeTruthy();
+    expect(submitted).toEqual({ input: {} });
+  },
+);
+
+it("꺼진 플러그인 메뉴를 내비게이션에 되살리지 않는다", async () => {
+  serve("admin", (path) =>
+    path.endsWith("/menus")
+      ? Response.json({
+          items: [
+            {
+              plugin_id: "p",
+              plugin_name: "숨김",
+              id: "hidden",
+              title: "숨긴 메뉴",
+              icon: "puzzle",
+              position: 0,
+              enabled: false,
+            },
+          ],
+          total: 1,
+        })
+      : undefined,
+  );
+  render(<App />);
+  await screen.findByRole("heading", { name: "개요" });
+  expect(
+    within(
+      screen.getByRole("navigation", { name: "주 내비게이션" }),
+    ).queryByRole("button", { name: "숨긴 메뉴" }),
+  ).toBeNull();
+});
+
+it("세션 요청이 401이면 다시 로그인할 수 있다", async () => {
+  let expired = false;
+  serve("admin", (path) =>
+    expired && path.endsWith("/status")
+      ? Response.json(
+          { error: { code: "unauthorized", message: "세션 만료" } },
+          { status: 401 },
+        )
+      : undefined,
+  );
+  render(<App />);
+  await screen.findByRole("heading", { name: "개요" });
+  expired = true;
+  await userEvent.click(
+    within(
+      screen
+        .getByRole("heading", { name: "개요", level: 1 })
+        .closest("header")!,
+    ).getByRole("button", { name: "새로고침" }),
+  );
+  expect(await screen.findByRole("button", { name: "로그인" })).toBeTruthy();
+  expect(screen.queryByRole("navigation")).toBeNull();
+});
+
+it("권한 거부 403은 로그인 상태를 유지하고 오류를 표시한다", async () => {
+  serve("admin", (path) =>
+    path.endsWith("/users?offset=0")
+      ? Response.json(
+          { error: { code: "forbidden", message: "권한이 없습니다." } },
+          { status: 403 },
+        )
+      : undefined,
+  );
+  render(<App />);
+  const nav = await screen.findByRole("navigation", { name: "주 내비게이션" });
+  await userEvent.click(
+    within(nav).getByRole("button", { name: "사용자 계정" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "권한이 없습니다.",
+  );
+  expect(screen.queryByRole("button", { name: "로그인" })).toBeNull();
+});
+
+it("이미 만료된 세션의 로그아웃 401도 로그인 화면으로 돌아간다", async () => {
+  serve("admin", (path) =>
+    path.endsWith("/auth/logout")
+      ? Response.json(
+          { error: { code: "unauthorized", message: "세션 만료" } },
+          { status: 401 },
+        )
+      : undefined,
+  );
+  render(<App />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "로그아웃" }),
+  );
+  expect(await screen.findByRole("button", { name: "로그인" })).toBeTruthy();
 });

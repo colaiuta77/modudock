@@ -35,61 +35,68 @@ import { Input } from "./components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { SchemaForm } from "./SchemaForm";
 
-export function PluginsPage({ user, notify, changed }: PageProps) {
+export function PluginsPage({
+  user,
+  notify,
+  changed,
+  onOpenWorkspace,
+}: PageProps & { onOpenWorkspace: (pluginId: string) => void }) {
   const [offset, setOffset] = useState(0),
     [selected, setSelected] = useState<string | null>(null);
   const plugins = useLoad<List<Plugin>>(`/plugins?offset=${offset}`);
   const { busy, perform } = useAction(notify);
   return (
     <div className="stack">
-      <Panel
-        title="GitHub에서 설치"
-        description="신뢰하는 저장소의 새 규약 플러그인을 설치합니다. 현재는 공개 GitHub 저장소를 지원합니다."
-      >
-        <form
-          className="install-form"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            if (
-              await perform(
-                () =>
-                  request("/plugins/install", {
-                    method: "POST",
-                    body: body({
-                      repository_url: f.get("repository_url"),
-                      ref: f.get("ref"),
-                    }),
-                  }),
-                "플러그인을 설치했습니다.",
-              )
-            ) {
-              plugins.reload();
-              changed();
-            }
-          }}
+      {user.role === "admin" && (
+        <Panel
+          title="GitHub에서 설치"
+          description="신뢰하는 저장소의 새 규약 플러그인을 설치합니다. 현재는 공개 GitHub 저장소를 지원합니다."
         >
-          <Field label="GitHub 저장소 URL">
-            <Input
-              name="repository_url"
-              type="url"
-              required
-              placeholder="https://github.com/owner/plugin"
-            />
-          </Field>
-          <Field label="태그 또는 커밋">
-            <Input name="ref" required placeholder="v1.0.0" />
-          </Field>
-          <Button disabled={busy}>
-            <Download />
-            {busy ? "설치·검증 중…" : "설치"}
-          </Button>
-        </form>
-        <p className="muted small">
-          플러그인은 서버 권한으로 별도 실행됩니다. 기존 FlaskFarm 플러그인은
-          호환되지 않습니다.
-        </p>
-      </Panel>
+          <form
+            className="install-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              if (
+                await perform(
+                  () =>
+                    request("/plugins/install", {
+                      method: "POST",
+                      body: body({
+                        repository_url: f.get("repository_url"),
+                        ref: f.get("ref"),
+                      }),
+                    }),
+                  "플러그인을 설치했습니다.",
+                )
+              ) {
+                plugins.reload();
+                changed();
+              }
+            }}
+          >
+            <Field label="GitHub 저장소 URL">
+              <Input
+                name="repository_url"
+                type="url"
+                required
+                placeholder="https://github.com/owner/plugin"
+              />
+            </Field>
+            <Field label="태그 또는 커밋">
+              <Input name="ref" required placeholder="v1.0.0" />
+            </Field>
+            <Button disabled={busy}>
+              <Download />
+              {busy ? "설치·검증 중…" : "설치"}
+            </Button>
+          </form>
+          <p className="muted small">
+            플러그인은 서버 권한으로 별도 실행됩니다. 기존 FlaskFarm 플러그인은
+            호환되지 않습니다.
+          </p>
+        </Panel>
+      )}
       <Panel title="설치된 플러그인">
         <ErrorBox message={plugins.error} />
         <div className="table-scroll">
@@ -118,43 +125,56 @@ export function PluginsPage({ user, notify, changed }: PageProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() =>
-                          setSelected(selected === p.id ? null : p.id)
-                        }
+                        onClick={() => onOpenWorkspace(p.id)}
                       >
-                        <Settings />
-                        관리
+                        작업 공간
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => {
-                          if (
-                            p.state === "active" &&
-                            !confirm(
-                              "비활성화하면 대기 작업이 취소됩니다. 계속할까요?",
-                            )
-                          )
-                            return;
-                          void perform(
-                            () =>
-                              request(`/plugins/${id(p.id)}/state`, {
-                                method: "PUT",
-                                body: body({ enabled: p.state !== "active" }),
-                              }),
-                            "상태를 변경했습니다.",
-                          ).then((ok) => {
-                            if (ok) {
-                              plugins.reload();
-                              changed();
+                      {user.role === "admin" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setSelected(selected === p.id ? null : p.id)
                             }
-                          });
-                        }}
-                      >
-                        <Power />
-                        {p.state === "active" ? "비활성화" : "활성화"}
-                      </Button>
+                          >
+                            <Settings />
+                            관리
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => {
+                              if (
+                                p.state === "active" &&
+                                !confirm(
+                                  "비활성화하면 대기 작업이 취소됩니다. 계속할까요?",
+                                )
+                              )
+                                return;
+                              void perform(
+                                () =>
+                                  request(`/plugins/${id(p.id)}/state`, {
+                                    method: "PUT",
+                                    body: body({
+                                      enabled: p.state !== "active",
+                                    }),
+                                  }),
+                                "상태를 변경했습니다.",
+                              ).then((ok) => {
+                                if (ok) {
+                                  plugins.reload();
+                                  changed();
+                                }
+                              });
+                            }}
+                          >
+                            <Power />
+                            {p.state === "active" ? "비활성화" : "활성화"}
+                          </Button>
+                        </>
+                      )}
                       {/^https:\/\/github\.com\//.test(p.repository_url) && (
                         <a
                           href={p.repository_url}
@@ -175,7 +195,8 @@ export function PluginsPage({ user, notify, changed }: PageProps) {
         </div>
         {plugins.data?.items.length === 0 && (
           <Empty>
-            설치된 플러그인이 없습니다. 위에서 GitHub 저장소를 연결해 주세요.
+            설치된 플러그인이 없습니다.
+            {user.role === "admin" && " 위에서 GitHub 저장소를 연결해 주세요."}
           </Empty>
         )}
         <Pagination
@@ -184,7 +205,7 @@ export function PluginsPage({ user, notify, changed }: PageProps) {
           onChange={setOffset}
         />
       </Panel>
-      {selected && (
+      {user.role === "admin" && selected && (
         <PluginManager
           key={selected}
           {...{ user, notify, changed }}

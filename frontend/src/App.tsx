@@ -67,7 +67,7 @@ const navigation: NavItem[] = [
   { id: "runs", title: "작업 이력", icon: History },
 ];
 const settings: NavItem[] = [
-  { id: "plugins", title: "플러그인", icon: Puzzle, admin: true },
+  { id: "plugins", title: "플러그인", icon: Puzzle, operator: true },
   { id: "schedules", title: "스케줄", icon: CalendarClock, operator: true },
   { id: "users", title: "사용자 계정", icon: Users, admin: true },
   { id: "tokens", title: "API 토큰", icon: KeyRound, admin: true },
@@ -163,6 +163,16 @@ export default function App() {
     [],
   );
   const changed = useCallback(() => setRevision((n) => n + 1), []);
+  useEffect(() => {
+    const expired = () => {
+      setUser(null);
+      setDrawer(false);
+      setNotice(null);
+      setView("overview");
+    };
+    window.addEventListener("modudock:unauthorized", expired);
+    return () => window.removeEventListener("modudock:unauthorized", expired);
+  }, []);
   useEffect(() => {
     let active = true;
     session()
@@ -537,8 +547,11 @@ function Console({
             </>
           )}
           {view === "runs" && <RunsPage {...props} revision={revision} />}{" "}
-          {view === "plugins" && user.role === "admin" && (
-            <PluginsPage {...props} />
+          {view === "plugins" && user.role !== "viewer" && (
+            <PluginsPage
+              {...props}
+              onOpenWorkspace={(pluginId) => onNavigate(`plugin:${pluginId}`)}
+            />
           )}{" "}
           {view === "schedules" && user.role !== "viewer" && (
             <SchedulesPage {...props} />

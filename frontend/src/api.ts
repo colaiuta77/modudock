@@ -117,6 +117,10 @@ export async function request<T>(
     credentials: "same-origin",
   });
   if (!response.ok) {
+    if (response.status === 401 && path !== "/auth/login") {
+      csrfToken = "";
+      window.dispatchEvent(new Event("modudock:unauthorized"));
+    }
     const data = await response.json().catch(() => null);
     throw new APIError(
       data?.error?.message || `요청에 실패했습니다. (${response.status})`,
@@ -143,7 +147,11 @@ export async function signIn(
   return data.user;
 }
 export async function signOut() {
-  await request("/auth/logout", { method: "POST" });
+  try {
+    await request("/auth/logout", { method: "POST" });
+  } catch (error) {
+    if (!(error instanceof APIError) || error.status !== 401) throw error;
+  }
   csrfToken = "";
 }
 export const body = (value: unknown) => JSON.stringify(value);
