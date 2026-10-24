@@ -203,6 +203,11 @@ func TestSettingsMasksAndPreservesArraySchemaSecrets(t *testing.T) {
 			`{"token":"sensitive-pointer"}`, `{"token":"********"}`, `{"token":""}`,
 		},
 		{
+			"encoded_json_pointer",
+			`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","$defs":{"a/b~c":{"type":"string","writeOnly":true}},"properties":{"token":{"$ref":"#/%24defs/a~1b~0c"}},"additionalProperties":false}`,
+			`{"token":"sensitive-encoded"}`, `{"token":"********"}`, `{"token":""}`,
+		},
+		{
 			"unevaluated_items",
 			`{"type":"object","properties":{"tokens":{"type":"array","unevaluatedItems":{"type":"string","writeOnly":true}}},"additionalProperties":false}`,
 			`{"tokens":["sensitive-first","sensitive-second"]}`, `{"tokens":["********","********"]}`, `{"tokens":["",""]}`,

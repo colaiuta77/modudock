@@ -707,28 +707,7 @@ func localSchemaRef(root map[string]any, ref string) map[string]any {
 		m, _ := node.(map[string]any)
 		return m
 	}
-	var find func(any) map[string]any
-	find = func(node any) map[string]any {
-		switch value := node.(type) {
-		case map[string]any:
-			if value["$anchor"] == fragment || value["$dynamicAnchor"] == fragment {
-				return value
-			}
-			for _, child := range value {
-				if found := find(child); found != nil {
-					return found
-				}
-			}
-		case []any:
-			for _, child := range value {
-				if found := find(child); found != nil {
-					return found
-				}
-			}
-		}
-		return nil
-	}
-	return find(root)
+	return nil
 }
 func secretBranches(nodes []map[string]any, root map[string]any) []map[string]any {
 	branches := []map[string]any{}
@@ -739,11 +718,9 @@ func secretBranches(nodes []map[string]any, root map[string]any) []map[string]an
 			return
 		}
 		branches = append(branches, node)
-		for _, key := range []string{"$ref", "$dynamicRef", "$recursiveRef"} {
-			if ref, ok := node[key].(string); ok && !seenRefs[ref] {
-				seenRefs[ref] = true
-				visit(localSchemaRef(root, ref))
-			}
+		if ref, ok := node["$ref"].(string); ok && !seenRefs[ref] {
+			seenRefs[ref] = true
+			visit(localSchemaRef(root, ref))
 		}
 		for _, key := range []string{"allOf", "anyOf", "oneOf"} {
 			if list, ok := node[key].([]any); ok {

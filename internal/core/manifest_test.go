@@ -43,6 +43,27 @@ func TestManifestRejectsUnsafeDeclarations(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestSchemaRejectsUnsupportedDialectsAndReferences(t *testing.T) {
+	for _, tc := range []struct{ name, schema string }{
+		{"draft07_tuple", `{"type":"object","$schema":"http://json-schema.org/draft-07/schema#","properties":{"tokens":{"type":"array","items":[{"type":"string","writeOnly":true}]}}}`},
+		{"named_anchor", `{"type":"object","$defs":{"token":{"$anchor":"token","type":"string","writeOnly":true}},"default":{"$anchor":"token","type":"string"},"properties":{"token":{"$ref":"#token"}}}`},
+		{"encoded_named_anchor", `{"type":"object","$defs":{"token":{"$anchor":"token","type":"string","writeOnly":true}},"properties":{"token":{"$ref":"#%74oken"}}}`},
+		{"dynamic_pointer", `{"type":"object","$defs":{"token":{"type":"string","writeOnly":true}},"properties":{"token":{"$dynamicRef":"#/$defs/token"}}}`},
+		{"recursive_pointer", `{"type":"object","$defs":{"token":{"type":"string","writeOnly":true}},"properties":{"token":{"$recursiveRef":"#/$defs/token"}}}`},
+		{"nested_dialect", `{"type":"object","$defs":{"token":{"$schema":"http://json-schema.org/draft-07/schema#","type":"string","writeOnly":true}},"properties":{"token":{"$ref":"#/$defs/token"}}}`},
+		{"annotation_dialect_pointer", `{"type":"object","default":{"$schema":"http://json-schema.org/draft-07/schema#","type":"string","writeOnly":true},"properties":{"token":{"$ref":"#/%64efault"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var schema map[string]any
+			if e := json.Unmarshal([]byte(tc.schema), &schema); e != nil {
+				t.Fatal(e)
+			}
+			if _, e := compileSchema(schema); e == nil {
+				t.Fatal("accepted unsupported schema dialect or reference")
+			}
+		})
+	}
+}
 func zipFixture(t *testing.T, name string, mode os.FileMode, content []byte) []byte {
 	t.Helper()
 	var b bytes.Buffer

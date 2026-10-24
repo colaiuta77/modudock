@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -143,14 +144,24 @@ func compileSchema(schema map[string]any) (*jsonschema.Schema, error) {
 		switch x := v.(type) {
 		case map[string]any:
 			for key, value := range x {
-				if key == "$ref" || key == "$dynamicRef" || key == "$recursiveRef" {
+				if key == "$dynamicRef" || key == "$recursiveRef" {
+					return errors.New("dynamic and recursive schema refs are forbidden")
+				}
+				if key == "$ref" {
 					s, ok := value.(string)
 					if !ok || !strings.HasPrefix(s, "#") {
 						return errors.New("external schema refs are forbidden")
 					}
+					u, e := url.Parse(s)
+					if e != nil || (u.Fragment != "" && !strings.HasPrefix(u.Fragment, "/")) {
+						return errors.New("schema refs must be local JSON Pointers")
+					}
 				}
 				if key == "$id" {
 					return errors.New("schema identifiers are forbidden")
+				}
+				if key == "$schema" && value != "https://json-schema.org/draft/2020-12/schema" && value != "https://json-schema.org/draft/2020-12/schema#" {
+					return errors.New("only JSON Schema Draft 2020-12 is supported")
 				}
 				if e := localRefs(value); e != nil {
 					return e
