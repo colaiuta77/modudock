@@ -143,7 +143,7 @@ export function SchemaForm({
               <Input
                 type={secret ? "password" : "text"}
                 autoComplete={secret ? "new-password" : undefined}
-                required={required && value !== "********"}
+                required={required && !(secret && initial[key] === "********")}
                 minLength={property.minLength}
                 maxLength={property.maxLength}
                 placeholder={

@@ -113,3 +113,48 @@ it("잘못된 구조화 JSON은 제출하지 않는다", async () => {
   await userEvent.click(screen.getByRole("button", { name: "저장" }));
   expect(sent).toBe(false);
 });
+
+it("저장된 필수 비밀값을 편집 후 지워도 기존값 유지로 제출한다", async () => {
+  let result: unknown;
+  render(
+    <SchemaForm
+      schema={{
+        required: ["secret"],
+        properties: {
+          secret: { type: "string", title: "API 키", writeOnly: true },
+        },
+      }}
+      initial={{ secret: "********" }}
+      onSubmit={async (value) => {
+        result = value;
+      }}
+    />,
+  );
+  const input = screen.getByLabelText("API 키") as HTMLInputElement;
+  await userEvent.type(input, "replacement");
+  await userEvent.clear(input);
+  expect(input.form?.checkValidity()).toBe(true);
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(result).toEqual({ secret: "" });
+});
+
+it("신규 필수 비밀값의 빈 입력은 제출하지 않는다", async () => {
+  let sent = false;
+  render(
+    <SchemaForm
+      schema={{
+        required: ["secret"],
+        properties: {
+          secret: { type: "string", title: "API 키", format: "password" },
+        },
+      }}
+      onSubmit={async () => {
+        sent = true;
+      }}
+    />,
+  );
+  const input = screen.getByLabelText("API 키") as HTMLInputElement;
+  expect(input.form?.checkValidity()).toBe(false);
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(sent).toBe(false);
+});
