@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -690,11 +691,18 @@ func localSchemaRef(root map[string]any, ref string) map[string]any {
 		var node any = root
 		for _, part := range strings.Split(strings.TrimPrefix(fragment, "/"), "/") {
 			key := strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")
-			m, ok := node.(map[string]any)
-			if !ok {
+			switch value := node.(type) {
+			case map[string]any:
+				node = value[key]
+			case []any:
+				index, e := strconv.Atoi(key)
+				if e != nil || index < 0 || index >= len(value) || strconv.Itoa(index) != key {
+					return nil
+				}
+				node = value[index]
+			default:
 				return nil
 			}
-			node = m[key]
 		}
 		m, _ := node.(map[string]any)
 		return m
@@ -818,6 +826,9 @@ func transformSecretNodes(nodes []map[string]any, root map[string]any, value, ol
 					}
 				}
 				if sub, ok := branch["contains"].(map[string]any); ok {
+					children = append(children, sub)
+				}
+				if sub, ok := branch["unevaluatedItems"].(map[string]any); ok {
 					children = append(children, sub)
 				}
 			}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -191,5 +192,82 @@ func TestPluginDownloadRejectsNonPublicAddresses(t *testing.T) {
 		if !publicPluginIP(net.ParseIP(raw)) {
 			t.Errorf("public GitHub address rejected %s", raw)
 		}
+	}
+}
+
+func TestSettingsMasksAndPreservesArraySchemaSecrets(t *testing.T) {
+	for _, tc := range []struct{ name, schema, settings, masked, empty string }{
+		{
+			"json_pointer_array_index",
+			`{"type":"object","$defs":{"credential":{"allOf":[{"type":"string","writeOnly":true}]}},"properties":{"token":{"$ref":"#/$defs/credential/allOf/0"}},"additionalProperties":false}`,
+			`{"token":"sensitive-pointer"}`, `{"token":"********"}`, `{"token":""}`,
+		},
+		{
+			"unevaluated_items",
+			`{"type":"object","properties":{"tokens":{"type":"array","unevaluatedItems":{"type":"string","writeOnly":true}}},"additionalProperties":false}`,
+			`{"tokens":["sensitive-first","sensitive-second"]}`, `{"tokens":["********","********"]}`, `{"tokens":["",""]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newClient(t)
+			c.login("admin")
+			release := seedPlugin(t, c.s, helperExecutable(t))
+			var raw string
+			if e := c.s.db.QueryRow("SELECT manifest FROM releases WHERE id=?", release).Scan(&raw); e != nil {
+				t.Fatal(e)
+			}
+			var manifest map[string]any
+			if e := json.Unmarshal([]byte(raw), &manifest); e != nil {
+				t.Fatal(e)
+			}
+			var schema map[string]any
+			if e := json.Unmarshal([]byte(tc.schema), &schema); e != nil {
+				t.Fatal(e)
+			}
+			manifest["settings_schema"] = schema
+			data, e := json.Marshal(manifest)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e = parseManifest(data); e != nil {
+				t.Fatalf("fixture schema is not installable: %v", e)
+			}
+			if _, e = c.s.db.Exec("UPDATE releases SET manifest=? WHERE id=?", string(data), release); e != nil {
+				t.Fatal(e)
+			}
+			var wantStored, wantMasked map[string]any
+			json.Unmarshal([]byte(tc.settings), &wantStored)
+			json.Unmarshal([]byte(tc.masked), &wantMasked)
+			t.Run("read_masking", func(t *testing.T) {
+				for _, method := range []string{"PUT", "GET"} {
+					body := ""
+					if method == "PUT" {
+						body = tc.settings
+					}
+					w := c.request(method, "/api/v1/plugins/hello/settings", body)
+					status(t, w, 200)
+					var got map[string]any
+					if e := json.Unmarshal(w.Body.Bytes(), &got); e != nil {
+						t.Fatal(e)
+					}
+					if !reflect.DeepEqual(got, wantMasked) {
+						t.Errorf("%s leaked unmasked settings: %s", method, w.Body)
+					}
+				}
+			})
+			for _, input := range []struct{ name, body string }{{"masked_preserves", tc.masked}, {"empty_preserves", tc.empty}} {
+				t.Run(input.name, func(t *testing.T) {
+					status(t, c.request("PUT", "/api/v1/plugins/hello/settings", tc.settings), 200)
+					status(t, c.request("PUT", "/api/v1/plugins/hello/settings", input.body), 200)
+					stored, e := c.s.settings("hello")
+					if e != nil {
+						t.Fatal(e)
+					}
+					if !reflect.DeepEqual(stored, wantStored) {
+						t.Fatalf("secret replaced instead of preserved: %v", stored)
+					}
+				})
+			}
+		})
 	}
 }
