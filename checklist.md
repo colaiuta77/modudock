@@ -10,3 +10,11 @@
 - [ ] 통합 테스트·독립 검토·로컬 커밋.
 
 GitHub push·NAS 업로드·운영 데이터 이관은 수행하지 않는다.
+
+## 최종 리뷰 수정
+
+- [x] 2020-12/local JSON Pointer 경계의 RED→GREEN과 기존 secret 회귀 확인.
+- [x] disable 후 실패는 failed, active 실패는 retry하는 실제 실행 회귀 확인.
+- [x] tasks 생략·빈 목록·혼합 목록 스케줄 UI의 RED→GREEN 확인.
+- [x] 저장된 required secret 비우기와 신규 required secret 검증.
+- [x] 전체 Go test/vet, frontend test/build, diff check 및 scoped commit·보고서.
