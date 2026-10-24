@@ -246,7 +246,7 @@ func (s *Server) executeRun(parent context.Context, run Run) {
 		message = "Task timeout"
 	}
 	if task.Idempotent && ctx.Err() == nil {
-		changed, err := s.db.Exec("UPDATE runs SET state='queued',next_attempt_at=?,error=? WHERE id=? AND state='running' AND attempts<3", time.Now().Add(2*time.Second).UTC().Format(timestampFormat), message, run.ID)
+		changed, err := s.db.Exec("UPDATE runs SET state='queued',next_attempt_at=?,error=? WHERE id=? AND state='running' AND attempts<3 AND EXISTS (SELECT 1 FROM plugins WHERE plugins.id=runs.plugin_id AND plugins.state='active')", time.Now().Add(2*time.Second).UTC().Format(timestampFormat), message, run.ID)
 		if err == nil {
 			n, _ := changed.RowsAffected()
 			if n > 0 {

@@ -2,6 +2,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -9,6 +10,28 @@ import (
 	"testing"
 	"time"
 )
+
+func TestDisabledPluginFailureDoesNotRetry(t *testing.T) {
+	c := newClient(t)
+	c.login("admin")
+	seedPlugin(t, c.s, helperExecutable(t))
+	w := c.request("POST", "/api/v1/plugins/hello/tasks/greet/runs", `{"input":{"mode":"fail"}}`)
+	status(t, w, 201)
+	run, e := c.s.claimRun()
+	if e != nil {
+		t.Fatal(e)
+	}
+	status(t, c.request("PUT", "/api/v1/plugins/hello/state", `{"enabled":false}`), 200)
+	c.s.executeRun(context.Background(), run)
+	finished, e := c.s.run(run.ID)
+	if e != nil || finished.State != "failed" || finished.FinishedAt == "" {
+		t.Fatalf("disabled failure must terminate, got %+v, %v", finished, e)
+	}
+	status(t, c.request("PUT", "/api/v1/plugins/hello/state", `{"enabled":true}`), 200)
+	if _, e := c.s.claimRun(); e == nil {
+		t.Fatal("reactivation unexpectedly claimed the disabled failure")
+	}
+}
 
 func seedPlugin(t *testing.T, s *Server, exe string) string {
 	t.Helper()
