@@ -67,3 +67,27 @@
 - GitHub Actions 원격 실행, GHCR 발행, 새 공개 저장소의 실제 플러그인 Release 설치.
 
 GitHub push·NAS 업로드·운영 데이터 이관은 하지 않았다. 플러그인은 신뢰 코드이며 별도 프로세스만으로 악성 코드를 격리하지 않는다.
+
+## 2026-10-25 계정 MFA·Passkey 최종 검증
+
+제품 변경 최종 커밋은 `a3d950a`다. 독립 검토가 찾은 Important 4건과 보안 안내 누락 1건을 실패 테스트로 재현한 후 수정했으며, 재리뷰 대신 전체 회귀 검사로 확인했다. UI에서 계정 전환/화면 이탈 뒤 응답과 인증기 작업을 중단하며, 계정 보안 변경은 진행 중인 익명 Passkey 인증도 폐기한다.
+
+| 검사 | 실제 결과 |
+| --- | --- |
+| Windows `.tools/go/bin/go.exe test ./... -count=1` | 4패키지 통과. cmd 4.117초, hello 0.884초, core 70.328초, web 1.254초. |
+| Linux Docker `go test -race ./... -count=1` | 4패키지 통과. core 161.590초. 초기 테스트 픽스처의 recorder 경합을 수정하고 대상 테스트 10회 및 전체 검사를 다시 통과했다. |
+| Windows/Linux `go vet ./...`, `go mod verify` | 종료 0. 의존성 파일 검증 통과. |
+| `npm.cmd --prefix frontend test` | 7개 파일, 40개 테스트 통과. |
+| `npm.cmd --prefix frontend run build` | TypeScript/Vite 8.3.5 빌드 성공. |
+| `node scripts/build.mjs` 및 Windows `scripts/smoke.mjs` | 실행파일 생성과 실제 HTTP·내장 UI·계정·CSRF·토큰 범위·OpenAPI 검증 통과. |
+| Docker buildx `--platform linux/amd64,linux/arm64 --load` | 두 아키텍처 로컬 이미지 빌드 성공. |
+| 두 Docker 이미지의 실행파일 스모크 | amd64 및 arm64 에뮬레이션 모두 PASS. |
+| 두 이미지의 MFA HTTP 검사 | QR/TOTP 등록, 10개 복구 코드, 복구 로그인, 남은 9개 조회, 오프라인 초기화, healthcheck 통과. nonroot 65532:65532, read-only rootfs, auth.key 0600/32바이트 확인. |
+| Chrome 156 가상 인증기 | 비밀번호 로그인→QR·수동 키→TOTP 활성화→로그아웃 후 코드 유지→복구 로그인→UV Passkey 등록/로그인/이름 변경/재인증/삭제 통과. 390px 가로 넘침 없음, 페이지 오류 없음. |
+| `govulncheck@v1.9.0 -show=verbose ./...` | 종료 0. 호출·import 경로 취약점 0건. 기존 미사용 OpenPGP 모듈 경고 GO-2026-5932 1건은 남음. |
+| 최종 `npm ci` audit | 취약점 0건. 276개 라이선스 고지 섹션 생성. |
+| macOS amd64/arm64 `go build` | 크로스 컴파일 성공. 실제 macOS 실행은 미검증. |
+
+검증된 이미지는 `modudock-go:mfa-local`, 로컬 배포 파일은 `dist/modudock-go-mfa.tar`다. `docker load -i modudock-go-mfa.tar` 후 Compose의 `MODUDOCK_IMAGE=modudock-go:mfa-local`을 설정해 사용할 수 있다. 이전 `dist/modudock-go-amd64.tar`는 이번 빌드가 아니다.
+
+실제 휴대전화 QR 스캔·Windows Hello·물리 보안 키·다른 브라우저·전체 보조공학 접근성·NAS 설정·운영 DB 복원·대규모 부하/퍼징·외부 의존성 전체 보안 감사는 이번 검증이 아니다. 검토 범위별 판단과 위험은 `account-security/context-notes.md`에 기록했다. 운영 적용 전 서버를 중지하고 core.db·auth.key를 포함한 데이터 디렉터리 전체를 백업해야 한다.
