@@ -32,6 +32,7 @@ type Server struct {
 	started           time.Time
 	logs              *logStore
 	loginMu           sync.Mutex
+	authKeyMu         sync.Mutex
 	attempts          map[string]loginAttempt
 	passwordSlots     chan struct{}
 	eventMu           sync.Mutex
@@ -93,7 +94,10 @@ func (s *Server) cleanupCredentials() error {
 	if _, e := s.db.Exec("DELETE FROM sessions WHERE expires_at<=?", now); e != nil {
 		return e
 	}
-	_, e := s.db.Exec("DELETE FROM tokens WHERE expires_at<=?", now)
+	if _, e := s.db.Exec("DELETE FROM tokens WHERE expires_at<=?", now); e != nil {
+		return e
+	}
+	_, e := s.db.Exec("DELETE FROM auth_challenges WHERE expires_at<=?", time.Now().UnixMilli())
 	return e
 }
 func (s *Server) credentialJanitor() {

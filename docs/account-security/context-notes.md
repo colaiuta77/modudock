@@ -50,3 +50,10 @@
 - 기준 검사 명령은 `.tools/go/bin/go.exe test ./internal/core -run 'TestLoginLogoutAndCSRF|TestStrictJSONAndLoginLimit|TestAccountChangesRevokeCredentials|TestPublicOriginAndSecureCookie|TestDataDirLockAndInvalidPublicURL' -count=1`이며 통과했다. GOCACHE/GOMODCACHE는 프로젝트의 `.tools` 아래로 지정했다.
 - `npm.cmd --prefix frontend test`는 5개 파일/26개 테스트가 통과했다. 이 결과는 기존 기능의 기준 상태이며 아직 만들지 않은 MFA/Passkey 기능 검증 결과가 아니다.
 - 제품 코드·의존성·배포 파일은 아직 변경하지 않았다.
+
+## 구현 1단계
+
+- DB v3는 v2 계정·세션·API 토큰·플러그인을 보존한다. 보안 버전과 단회 challenge 저장을 추가했으며 인증 상태는 사용자·세션·브라우저·목적으로 묶는다.
+- TOTP 키는 auth.key에 별도로 생성하고 AES-256-GCM의 사용자/목적 AAD로 보호한다. 기존 암호문이 있으면 누락된 키를 재생성하지 않는다. 복구 CLI 지원을 위해 서버 Open 자체에서는 키를 복호화하지 않는다.
+- 새 테스트의 미구현 컴파일 실패를 확인한 뒤 구현했다. Go 코어 전체 테스트가 33.520초에 통과했고 git diff --check도 통과했다.
+- 기존 Go 전용 저장소와 codex/go-platform 브랜치를 사용한다. 기본 작업공간은 이전 Python 저장소이므로 별도 worktree를 잘못 생성하지 않고 모든 명령에 Go 경로를 명시했다.

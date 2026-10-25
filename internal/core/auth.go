@@ -168,7 +168,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	defer func() { <-s.passwordSlots }()
 	var u User
 	var encoded string
-	e := s.db.QueryRowContext(r.Context(), `SELECT id,username,role,is_active,created_at,password_hash FROM users WHERE username=?`, body.Username).Scan(&u.ID, &u.Username, &u.Role, &u.IsActive, &u.CreatedAt, &encoded)
+	var version int64
+	e := s.db.QueryRowContext(r.Context(), `SELECT id,username,role,is_active,created_at,password_hash,auth_version FROM users WHERE username=?`, body.Username).Scan(&u.ID, &u.Username, &u.Role, &u.IsActive, &u.CreatedAt, &encoded, &version)
 	if e != nil {
 		encoded = "$argon2id$v=19$m=65536,t=1,p=2$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	}
@@ -178,27 +179,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 401, "invalid_credentials", "Invalid username or password")
 		return
 	}
-	raw, csrf := randomID(), randomID()
 	tx, e := s.db.BeginTx(r.Context(), nil)
 	if e != nil {
 		internalError(w)
 		return
 	}
 	defer tx.Rollback()
-	now := time.Now().UTC()
-	_, e = tx.ExecContext(r.Context(), `DELETE FROM sessions WHERE expires_at<=?`, now.Format(time.RFC3339))
-	if e == nil {
-		_, e = tx.ExecContext(r.Context(), `DELETE FROM sessions WHERE hash IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires_at DESC LIMIT -1 OFFSET 19)`, u.ID)
-	}
-	if e == nil {
-		_, e = tx.ExecContext(r.Context(), `INSERT INTO sessions(hash,user_id,csrf,expires_at) SELECT ?,id,?,? FROM users WHERE id=? AND password_hash=? AND is_active=1`, hashToken(raw), csrf, now.Add(24*time.Hour).Format(time.RFC3339), u.ID, encoded)
-	}
+	session, e := s.issueSession(r.Context(), tx, u.ID, version)
 	if e != nil {
-		internalError(w)
-		return
-	}
-	var exists int
-	if e = tx.QueryRowContext(r.Context(), "SELECT count(*) FROM sessions WHERE hash=?", hashToken(raw)).Scan(&exists); e != nil || exists != 1 {
 		apiError(w, 401, "invalid_credentials", "Account changed during login")
 		return
 	}
@@ -206,10 +194,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		internalError(w)
 		return
 	}
-	s.setCookie(w, raw, 86400)
+	s.setCookie(w, session.RawCookie, 86400)
 	s.releaseLogin(r)
 	s.audit(r, "login", u.ID)
-	writeJSON(w, 200, map[string]any{"user": u, "csrf_token": csrf})
+	writeJSON(w, 200, session)
 }
 func (s *Server) setCookie(w http.ResponseWriter, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: value, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.options.PublicURL, "https://"), SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
@@ -285,7 +273,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, p princi
 	w.WriteHeader(204)
 }
 func revokeCredentials(tx *sql.Tx, userID string) error {
-	if _, e := tx.Exec("DELETE FROM sessions WHERE user_id=?", userID); e != nil {
+	if e := revokeWebCredentials(tx, userID); e != nil {
 		return e
 	}
 	_, e := tx.Exec("DELETE FROM tokens WHERE user_id=?", userID)

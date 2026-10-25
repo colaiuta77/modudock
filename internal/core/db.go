@@ -61,7 +61,7 @@ func (s *Server) openDB() error {
 		s.Close()
 		return e
 	}
-	if version > 2 {
+	if version > 3 {
 		s.Close()
 		return fmt.Errorf("unsupported database version %d", version)
 	}
@@ -95,6 +95,22 @@ func (s *Server) openDB() error {
 		if e = tx.Commit(); e != nil {
 			s.Close()
 			return e
+		}
+	}
+	if version < 3 {
+		tx, err := s.db.Begin()
+		if err != nil {
+			s.Close()
+			return err
+		}
+		if _, err = tx.Exec(securitySchema); err != nil {
+			tx.Rollback()
+			s.Close()
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			s.Close()
+			return err
 		}
 	}
 	if e = os.Chmod(filepath.Join(dir, "core.db"), 0600); e != nil {
