@@ -23,15 +23,15 @@
 ### Task 1: 공통 컴포넌트와 전체 화면 Precision 적용
 **Files:** `frontend/src/precision.css` (new), `frontend/src/styles.css`, `frontend/src/components/ui/{button,card,badge,input,textarea,tabs,sheet}.tsx`, `frontend/src/App.tsx` (선택 메뉴 접근성).
 **Interfaces:** 기존 export/props 유지. precision.css 토큰을 styles.css와 공통 UI가 소비한다.
-- [ ] 브라우저 테스트를 먼저 작성해 배경/primary/모서리/포커스/반응형 레이아웃 계약을 확인하고 변경 전 실패를 관찰한다.
-- [ ] 공식 소스의 토큰·컴포넌트 스타일을 적용하고 전체 화면의 하드코딩 색상/그림자/간격을 정리한다.
-- [ ] `npm.cmd --prefix frontend test` 및 `npm.cmd --prefix frontend run build` 통과, 브라우저 데스크톱/모바일 검증 통과.
-- [ ] `feat(ui): apply Precision design system` 커밋.
+- [x] 브라우저 테스트를 먼저 작성해 배경/primary/모서리/포커스/반응형 레이아웃 계약을 확인하고 변경 전 실패를 관찰한다.
+- [x] 공식 소스의 토큰·컴포넌트 스타일을 적용하고 전체 화면의 하드코딩 색상/그림자/간격을 정리한다.
+- [x] `npm.cmd --prefix frontend test` 및 `npm.cmd --prefix frontend run build` 통과, 브라우저 데스크톱/모바일 검증 통과.
+- [x] `feat(ui): apply Precision design system` 커밋.
 
 ### Task 2: 확장 방법·라이선스·최종 검증
 **Files:** `docs/precision/README.md`, `docs/better-design-license.txt`, `scripts/notices.mjs`, `docs/precision/checklist.md`, `docs/precision/context-notes.md`.
 **Interfaces:** Task 1의 공통 토큰/컴포넌트 경로와 기존 notices 빌드 파이프라인 사용.
-- [ ] 공식 개별 컴포넌트 추가 명령과 덮어쓰기 주의, 버전 출처와 통합 변경사항 문서화.
-- [ ] MIT 원문을 고지 생성기에 연결하고 실제 생성물에서 확인.
-- [ ] 프론트 전체 테스트/빌드, `node scripts/build.mjs`, 임베디드 스모크 및 Go 테스트 확인.
-- [ ] 최종 독립 리뷰 1회 후 중요한 발견만 회귀 검증하고 결과 문서/커밋.
+- [x] 공식 개별 컴포넌트 추가 명령과 덮어쓰기 주의, 버전 출처와 통합 변경사항 문서화.
+- [x] MIT 원문을 고지 생성기에 연결하고 실제 생성물에서 확인.
+- [x] 프론트 전체 테스트/빌드, `node scripts/build.mjs`, 임베디드 스모크 및 Go 테스트 확인.
+- [x] 최종 독립 리뷰 1회 후 중요한 발견만 회귀 검증하고 결과 문서/커밋.

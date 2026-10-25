@@ -61,6 +61,11 @@ try {
     for (const name of ['개요','작업 이력','플러그인','스케줄','사용자 계정','API 토큰','메뉴 편집','전체 로그','계정 보안','데모 작업']) {
       await navigate(name, mobile);
       await capture(`${mobile?'mobile':'desktop'}-${name}`);
+      if (name === '스케줄' || name === '사용자 계정') {
+        await page.getByRole('button', {name:name==='스케줄'?'스케줄 추가':'계정 추가',exact:true}).click();
+        await page.getByLabel(name==='스케줄'?'이름':'사용자 이름',{exact:true}).fill('Precision 확인');
+        await capture(`${mobile?'mobile':'desktop'}-${name}-editor`);
+      }
     }
     await page.getByRole('tab', {name:'작업', exact:true}).click();
     await page.getByLabel('제목', {exact:true}).fill('한글 입력 유지');
@@ -95,6 +100,13 @@ try {
   await page.getByLabel('인증 코드',{exact:true}).fill('012345');
   await page.getByRole('button',{name:'인증 후 로그인',exact:true}).click();
   await page.getByRole('heading',{name:'개요',exact:true}).waitFor();
+  for (const width of [320,768,1024]) {
+    await page.setViewportSize({width,height:900});
+    await navigate('개요',width<768);
+    await capture(`overview-${width}`);
+    await navigate('계정 보안',width<768);
+    await capture(`security-${width}`);
+  }
   assert.deepEqual(errors,[]);
-  console.log('PASS Precision tokens/cards, 20 menu views, tabs/forms, sidebar, mobile, TOTP/recovery/MFA fixtures, focus, no page errors.');
+  console.log('PASS Precision tokens/cards, 20 menu views, account/schedule editors, tabs/forms, sidebar, 320/390/768/1024/1440px, TOTP/recovery/MFA fixtures, focus, no page errors.');
 } finally { await browser.close(); }

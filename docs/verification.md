@@ -91,3 +91,17 @@ GitHub push·NAS 업로드·운영 데이터 이관은 하지 않았다. 플러�
 검증된 이미지는 `modudock-go:mfa-local`, 로컬 배포 파일은 `dist/modudock-go-mfa.tar`다. `docker load -i modudock-go-mfa.tar` 후 Compose의 `MODUDOCK_IMAGE=modudock-go:mfa-local`을 설정해 사용할 수 있다. 이전 `dist/modudock-go-amd64.tar`는 이번 빌드가 아니다.
 
 실제 휴대전화 QR 스캔·Windows Hello·물리 보안 키·다른 브라우저·전체 보조공학 접근성·NAS 설정·운영 DB 복원·대규모 부하/퍼징·외부 의존성 전체 보안 감사는 이번 검증이 아니다. 검토 범위별 판단과 위험은 `account-security/context-notes.md`에 기록했다. 운영 적용 전 서버를 중지하고 core.db·auth.key를 포함한 데이터 디렉터리 전체를 백업해야 한다.
+
+## 2026-10-25 Precision UI
+
+| 검증 | 실제 결과 |
+| --- | --- |
+| `npm.cmd --prefix frontend test` | 7개 파일, 40개 테스트 통과. |
+| `npm.cmd --prefix frontend run build` | TypeScript와 Vite 8.3.5 빌드 통과. |
+| `node scripts/precision-check.mjs .tools/browser-test/node_modules/playwright/index.mjs` | Chrome 320/390/768/1024/1440px, 20개 메뉴 화면, 계정·스케줄 편집, 플러그인 탭/폼, 사이드바, TOTP/복구 코드/MFA 화면, 포커스와 가로 넘침 검증 통과. API fixture 기반 UI 검증이다. |
+| `go test ./... -count=1` / `go vet ./...` | 4개 패키지 통과, vet 종료 0. |
+| `node scripts/build.mjs` | 새 UI를 임베드한 Windows 실행파일 생성, npm audit 0건, MIT 고지 277개 섹션 생성. |
+| `node scripts/smoke.mjs dist/modudock-windows-amd64.exe` | 실제 HTTP 로그인·CSRF·사용자·토큰 권한·내장 UI·OpenAPI 통과. |
+| 독립 읽기 전용 코드 리뷰 | Critical/Important/Minor 발견 0건. |
+
+Precision 작업에서는 Docker 이미지와 Linux/macOS 실행파일을 재생성하지 않았다. 위 MFA 이미지 `modudock-go:mfa-local` / `modudock-go-mfa.tar`에는 이전 UI가 들어 있다. 새 스타일 배포는 소스로 이미지를 다시 빌드하거나 별도로 새 이미지 생성이 필요하다. 실기기/다른 브라우저 검증과 상세 판단은 `precision/context-notes.md`에 기록했다.
