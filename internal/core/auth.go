@@ -179,6 +179,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 401, "invalid_credentials", "Invalid username or password")
 		return
 	}
+	var hasTOTP bool
+	if e = s.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM user_totp WHERE user_id=?)", u.ID).Scan(&hasTOTP); e != nil {
+		internalError(w)
+		return
+	}
+	if hasTOTP {
+		s.startMFALogin(w, r, u.ID, version)
+		return
+	}
 	tx, e := s.db.BeginTx(r.Context(), nil)
 	if e != nil {
 		internalError(w)

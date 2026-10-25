@@ -51,6 +51,7 @@ func (s *Server) apiDocument() map[string]any {
 	schemas["LogList"] = objectSchema(map[string]any{"items": arraySchema(schemaRef("Log")), "total": integer}, "items", "total")
 	operations := []apiOperation{{"/auth/login", "post", "Login", "Auth", "200", "", ""}, {"/auth/me", "get", "", "Auth", "200", "viewer", ""}, {"/auth/logout", "post", "", "", "204", "viewer", ""}, {"/auth/password", "put", "PasswordChange", "", "204", "viewer", "users:write"}, {"/users", "get", "", "UserList", "200", "admin", "users:write"}, {"/users", "post", "UserCreate", "User", "201", "admin", "users:write"}, {"/users/{id}", "put", "UserUpdate", "User", "200", "admin", "users:write"}, {"/users/{id}", "delete", "", "", "204", "admin", "users:write"}, {"/tokens", "get", "", "TokenList", "200", "admin", "tokens:write"}, {"/tokens", "post", "TokenCreate", "TokenCreated", "201", "admin", "tokens:write"}, {"/tokens/{id}", "delete", "", "", "204", "admin", "tokens:write"}, {"/status", "get", "", "Status", "200", "viewer", "status:read"}, {"/logs", "get", "", "LogList", "200", "operator", "logs:read"}, {"/events", "get", "", "", "200", "viewer", "status:read"}, {"/openapi.json", "get", "", "", "200", "viewer", ""}, {"/healthz", "get", "", "Health", "200", "", ""}}
 	operations = append(operations, pluginAPISchemas(schemas)...)
+	operations = append(operations, securityAPISchemas(schemas)...)
 	paths := map[string]any{}
 	for _, definition := range operations {
 		success := map[string]any{"description": "Success"}
@@ -58,12 +59,19 @@ func (s *Server) apiDocument() map[string]any {
 			success["content"] = map[string]any{"application/json": map[string]any{"schema": schemaRef(definition.response)}}
 		}
 		responses := map[string]any{definition.status: success}
+		if definition.path == "/auth/login" {
+			responses["202"] = map[string]any{"description": "Second factor required; preauthentication cookies are not a session", "content": map[string]any{"application/json": map[string]any{"schema": schemaRef("MFAPending")}}}
+		}
 		for _, code := range []string{"400", "401", "403", "404", "405", "409", "413", "415", "429", "500", "502", "503"} {
 			responses[code] = map[string]any{"description": "API error", "content": map[string]any{"application/json": map[string]any{"schema": schemaRef("Error")}}}
 		}
 		operation := map[string]any{"responses": responses, "x-minimum-role": definition.role, "x-required-scope": definition.scope}
 		if definition.role == "" {
 			operation["security"] = []any{}
+		}
+		if definition.scope == "session-only" {
+			operation["security"] = []map[string][]string{{"session": {}}}
+			operation["x-required-scope"] = ""
 		}
 		if definition.path == "/healthz" {
 			operation["servers"] = []map[string]string{{"url": "/"}}
@@ -108,6 +116,30 @@ func (s *Server) apiDocument() map[string]any {
 		entry[definition.method] = operation
 	}
 	return map[string]any{"openapi": "3.1.0", "info": map[string]string{"title": "ModuDock Go API", "version": s.options.Version}, "servers": []map[string]string{{"url": "/api/v1"}}, "paths": paths, "security": []map[string][]string{{"session": {}}, {"bearer": {}}}, "components": map[string]any{"schemas": schemas, "securitySchemes": map[string]any{"session": map[string]any{"type": "apiKey", "in": "cookie", "name": cookieName}, "bearer": map[string]any{"type": "http", "scheme": "bearer"}}}}
+}
+
+func securityAPISchemas(schemas map[string]any) []apiOperation {
+	text := map[string]any{"type": "string"}
+	boolean := map[string]any{"type": "boolean"}
+	date := map[string]any{"type": "string", "format": "date-time"}
+	secret := map[string]any{"type": "string", "description": "Sensitive one-time value; never persist in browser storage"}
+	schemas["AuthOptions"] = objectSchema(map[string]any{"passkey_available": boolean, "passkey_reason": text}, "passkey_available", "passkey_reason")
+	schemas["MFAPending"] = objectSchema(map[string]any{"mfa_required": map[string]any{"const": true}, "expires_at": date}, "mfa_required", "expires_at")
+	schemas["MFACode"] = objectSchema(map[string]any{"method": map[string]any{"type": "string", "enum": []string{"totp", "recovery"}}, "code": secret}, "method", "code")
+	schemas["ReauthRequest"] = objectSchema(map[string]any{"purpose": text, "password": secret, "method": text, "code": secret}, "purpose", "password")
+	schemas["ReauthProof"] = objectSchema(map[string]any{"proof": secret, "expires_at": date}, "proof", "expires_at")
+	schemas["ProofRequest"] = objectSchema(map[string]any{"proof": secret}, "proof")
+	schemas["TOTPSetup"] = objectSchema(map[string]any{"secret": secret, "qr_png": secret, "expires_at": date}, "secret", "qr_png", "expires_at")
+	schemas["TOTPConfirm"] = objectSchema(map[string]any{"proof": secret, "code": secret}, "proof", "code")
+	schemas["RecoveryCodes"] = objectSchema(map[string]any{"recovery_codes": arraySchema(secret), "signed_out": map[string]any{"const": true}}, "recovery_codes", "signed_out")
+	schemas["AccountSecurity"] = objectSchema(map[string]any{"totp_enabled": boolean, "recovery_codes_remaining": map[string]any{"type": "integer"}, "passkeys": arraySchema(map[string]any{"type": "object"}), "passkey_available": boolean, "passkey_reason": text}, "totp_enabled", "recovery_codes_remaining", "passkeys", "passkey_available", "passkey_reason")
+	return []apiOperation{
+		{"/auth/options", "get", "", "AuthOptions", "200", "", ""}, {"/auth/mfa", "post", "MFACode", "Auth", "200", "", ""}, {"/auth/login/cancel", "post", "", "", "204", "", ""},
+		{"/auth/security", "get", "", "AccountSecurity", "200", "viewer", "session-only"}, {"/auth/reauth", "post", "ReauthRequest", "ReauthProof", "200", "viewer", "session-only"},
+		{"/auth/totp/setup", "post", "ProofRequest", "TOTPSetup", "200", "viewer", "session-only"}, {"/auth/totp/setup", "delete", "", "", "204", "viewer", "session-only"},
+		{"/auth/totp/confirm", "post", "TOTPConfirm", "RecoveryCodes", "200", "viewer", "session-only"}, {"/auth/totp", "delete", "ProofRequest", "", "204", "viewer", "session-only"},
+		{"/auth/recovery-codes", "post", "ProofRequest", "RecoveryCodes", "200", "viewer", "session-only"},
+	}
 }
 
 func pluginAPISchemas(schemas map[string]any) []apiOperation {

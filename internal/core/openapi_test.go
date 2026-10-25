@@ -35,6 +35,19 @@ func TestOpenAPIAuthenticationContract(t *testing.T) {
 		t.Fatal("security schemes missing")
 	}
 }
+func TestOpenAPIMFAContract(t *testing.T) {
+	c := newClient(t)
+	paths := c.s.apiDocument()["paths"].(map[string]any)
+	for _, path := range []string{"/auth/security", "/auth/reauth", "/auth/totp/setup", "/auth/totp/confirm", "/auth/totp", "/auth/recovery-codes", "/auth/mfa", "/auth/login/cancel", "/auth/options"} {
+		if paths[path] == nil {
+			t.Errorf("missing %s", path)
+		}
+	}
+	login := paths["/auth/login"].(map[string]any)["post"].(map[string]any)
+	if login["responses"].(map[string]any)["202"] == nil {
+		t.Error("missing MFA challenge response")
+	}
+}
 func TestOpenAPIPluginQueueScheduleContract(t *testing.T) {
 	c := newClient(t)
 	doc := c.s.apiDocument()

@@ -87,6 +87,14 @@ func (s *Server) putAuthChallenge(ctx context.Context, c authChallenge) (string,
 		return "", e
 	}
 	defer tx.Rollback()
+	raw, e := insertAuthChallenge(ctx, tx, c)
+	if e != nil {
+		return "", e
+	}
+	return raw, tx.Commit()
+}
+func insertAuthChallenge(ctx context.Context, tx *sql.Tx, c authChallenge) (string, error) {
+	var e error
 	if _, e = tx.ExecContext(ctx, `DELETE FROM auth_challenges WHERE expires_at<=?`, time.Now().UnixMilli()); e != nil {
 		return "", e
 	}
@@ -111,7 +119,7 @@ func (s *Server) putAuthChallenge(ctx context.Context, c authChallenge) (string,
 	if e != nil {
 		return "", e
 	}
-	return raw, tx.Commit()
+	return raw, nil
 }
 func (s *Server) readAuthChallenge(ctx context.Context, raw string) (authChallenge, error) {
 	var c authChallenge
