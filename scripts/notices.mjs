@@ -32,6 +32,7 @@ for (const line of modules.trim().split(/\r?\n/)) {
 const goroot = execFileSync("go", ["env", "GOROOT"], { encoding: "utf8" }).trim();
 await append("Go standard library", goroot);
 parts.push(await readFile(join(root, "docs/shadcn-license.txt"), "utf8"));
+parts.push(await readFile(join(root, "docs/better-design-license.txt"), "utf8"));
 const content = parts.join("\n");
 assert.match(content, /lucide-react/);
 assert.match(content, /Permission/);
