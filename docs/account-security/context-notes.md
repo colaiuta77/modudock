@@ -6,7 +6,7 @@
 - 대상은 `D:/Documents/ChatGPT/ModuDock-Go`이다. 기존 `Modudock`은 수정하지 않는다.
 - 원격 푸시, NAS 업로드, 운영 계정·DB 변경은 범위가 아니다.
 - 시작 시 `git status --short`는 비어 있고 브랜치는 `codex/go-platform`이었다.
-- 브레인스토밍 지침의 설계 문서 승인 단계가 남아 있다. 제품 코드와 의존성 변경 전 설계를 검토받는다.
+- 처음에는 브레인스토밍 지침의 설계 승인을 기다렸으며, 이후 사용자의 진행 요청으로 승인을 받았다. 제품 구현 전 상세 계획과 실행 방식을 확정한다.
 
 ## 코드에서 확인한 연결 지점
 
@@ -40,3 +40,13 @@
 - 문서 4개의 존재·UTF-8 대체 문자 부재·제목·끝 개행 및 사용자 승인/구현 항목이 미완료임을 Node assert로 확인했다.
 - `git diff --exit-code -- internal frontend cmd go.mod go.sum compose.yaml Dockerfile`는 0으로 종료했다. 제품 코드·의존성·배포 파일은 변경하지 않았다.
 - 제품 구현과 관련 테스트 실행은 설계 승인 후 진행한다. 이번 단계에서는 Go/프런트 테스트·브라우저 검증을 수행하지 않았다.
+
+## 설계 승인 후 상세 계획과 기준 테스트
+
+- 사용자의 진행 요청으로 설계 승인을 기록했다. 상세 계획은 `docs/superpowers/plans/2026-10-25-account-mfa-passkeys.md`에 저장했다.
+- writing-plans 지침에 따라 상세 계획 검토 및 실행 방식 선택을 요청했다. 직접 구현 후 최종 독립 검토를 권장했다. 인증 저장·세션·TOTP·Passkey가 같은 상태 경계를 공유하므로 단계별 구현자 교체보다 일관성을 유지하기 쉽다는 이유다.
+- QR 등록 대기 10분과 재인증 5분은 구별한다. setup에서는 증명을 확인하고 confirm에서 소비한다. 만료 후에는 새 증명을 받아야 한다.
+- 강제 로그아웃 후에도 신규 복구 코드는 사용자가 저장할 때까지 App의 인증 UI 밖 메모리에 표시한다. 브라우저 저장소는 사용하지 않는다.
+- 기준 검사 명령은 `.tools/go/bin/go.exe test ./internal/core -run 'TestLoginLogoutAndCSRF|TestStrictJSONAndLoginLimit|TestAccountChangesRevokeCredentials|TestPublicOriginAndSecureCookie|TestDataDirLockAndInvalidPublicURL' -count=1`이며 통과했다. GOCACHE/GOMODCACHE는 프로젝트의 `.tools` 아래로 지정했다.
+- `npm.cmd --prefix frontend test`는 5개 파일/26개 테스트가 통과했다. 이 결과는 기존 기능의 기준 상태이며 아직 만들지 않은 MFA/Passkey 기능 검증 결과가 아니다.
+- 제품 코드·의존성·배포 파일은 아직 변경하지 않았다.
