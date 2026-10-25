@@ -48,6 +48,15 @@ func TestOpenAPIMFAContract(t *testing.T) {
 		t.Error("missing MFA challenge response")
 	}
 }
+func TestOpenAPIPasskeyContract(t *testing.T) {
+	c := newClient(t)
+	paths := c.s.apiDocument()["paths"].(map[string]any)
+	for _, path := range []string{"/auth/passkey/begin", "/auth/passkey/finish", "/auth/passkeys/register/begin", "/auth/passkeys/register/finish", "/auth/passkeys/reauth/begin", "/auth/passkeys/reauth/finish", "/auth/passkeys/{id}"} {
+		if paths[path] == nil {
+			t.Errorf("missing %s", path)
+		}
+	}
+}
 func TestOpenAPIPluginQueueScheduleContract(t *testing.T) {
 	c := newClient(t)
 	doc := c.s.apiDocument()

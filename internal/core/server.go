@@ -167,6 +167,7 @@ func (s *Server) route(pattern, role, scope string, h endpoint) {
 }
 func (s *Server) registerRoutes() {
 	s.registerSecurityRoutes()
+	s.registerPasskeyRoutes()
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	s.route("GET /api/v1/auth/me", "viewer", "", func(w http.ResponseWriter, r *http.Request, p principal) {

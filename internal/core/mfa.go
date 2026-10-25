@@ -22,7 +22,8 @@ const bindingCookie = "modudock_auth_binding"
 
 func (s *Server) registerSecurityRoutes() {
 	s.mux.HandleFunc("GET /api/v1/auth/options", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"passkey_available": false, "passkey_reason": "Passkey initialization pending"})
+		available, reason := s.passkeyAvailability()
+		writeJSON(w, 200, map[string]any{"passkey_available": available, "passkey_reason": reason})
 	})
 	s.mux.HandleFunc("POST /api/v1/auth/mfa", s.finishMFALogin)
 	s.mux.HandleFunc("POST /api/v1/auth/login/cancel", func(w http.ResponseWriter, r *http.Request) {
@@ -378,7 +379,13 @@ func (s *Server) securityStatus(w http.ResponseWriter, r *http.Request, p princi
 		internalError(w)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"totp_enabled": enabled, "recovery_codes_remaining": remaining, "passkeys": []any{}, "passkey_available": false, "passkey_reason": "Passkey initialization pending"})
+	keys, e := s.listPasskeyMetadata(r.Context(), p.User.ID)
+	if e != nil {
+		internalError(w)
+		return
+	}
+	available, reason := s.passkeyAvailability()
+	writeJSON(w, 200, map[string]any{"totp_enabled": enabled, "recovery_codes_remaining": remaining, "passkeys": keys, "passkey_available": available, "passkey_reason": reason})
 }
 func (s *Server) setupTOTP(w http.ResponseWriter, r *http.Request, p principal) {
 	var body struct{ Proof string }
