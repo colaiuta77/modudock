@@ -11,8 +11,11 @@ import (
 )
 
 func (s *Server) authSecretKey(create bool) ([]byte, error) {
-	s.authKeyMu.Lock()
-	defer s.authKeyMu.Unlock()
+	// 복호화는 DB 트랜잭션 안에서도 호출되므로 DB를 조회하는 생성 잠금을 기다리지 않는다.
+	if create {
+		s.authKeyMu.Lock()
+		defer s.authKeyMu.Unlock()
+	}
 	path := filepath.Join(s.dataDir, "auth.key")
 	info, e := os.Lstat(path)
 	if e == nil && !info.Mode().IsRegular() {

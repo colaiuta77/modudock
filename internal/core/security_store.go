@@ -71,7 +71,7 @@ func (s *Server) issueSession(ctx context.Context, tx *sql.Tx, userID string, ve
 	return session, e
 }
 func revokeWebCredentials(tx *sql.Tx, userID string) error {
-	for _, query := range []string{`UPDATE users SET auth_version=auth_version+1 WHERE id=?`, `DELETE FROM sessions WHERE user_id=?`, `DELETE FROM auth_challenges WHERE user_id=?`} {
+	for _, query := range []string{`UPDATE users SET auth_version=auth_version+1 WHERE id=?`, `DELETE FROM sessions WHERE user_id=?`, `DELETE FROM auth_challenges WHERE user_id=? OR (user_id IS NULL AND purpose='passkey-login')`} {
 		if _, e := tx.Exec(query, userID); e != nil {
 			return e
 		}

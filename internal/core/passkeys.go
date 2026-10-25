@@ -362,7 +362,6 @@ func (s *Server) beginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 429, "rate_limited", "Too many pending authentication requests")
 		return
 	}
-	s.authAttemptSucceeded(r, "passkey-begin", "")
 	s.setPreauthCookies(w, raw, binding, 300)
 	writeJSON(w, 200, options)
 }
