@@ -1,7 +1,7 @@
 // 계정별 TOTP와 Passkey 관리 및 로그아웃 후 복구 코드 일회 표시를 제공한다.
-import { useState, type FormEvent } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Copy, Download, Fingerprint, ShieldCheck, Trash2 } from "lucide-react";
-import { APIError, body, id, request } from "./api";
+import { APIError, body, id, request as apiRequest } from "./api";
 import { ErrorBox, Field, Panel, useLoad, type PageProps } from "./common";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -36,6 +36,18 @@ export function SecurityPage(
     onRecoveryCodes: (codes: string[]) => void;
   },
 ) {
+  const lifecycle = useRef(new AbortController());
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    lifecycle.current = controller;
+    return () => controller.abort();
+  }, [props.user.id]);
+  function request<T>(path: string, options: RequestInit = {}) {
+    return apiRequest<T>(path, {
+      ...options,
+      signal: lifecycle.current.signal,
+    });
+  }
   const security = useLoad<SecurityStatus>("/auth/security");
   const [intent, setIntent] = useState("");
   const [proof, setProof] = useState<Proof>();
@@ -60,15 +72,16 @@ export function SecurityPage(
     props.onSignedOut();
   }
   async function run(operation: () => Promise<void>) {
+    const signal = lifecycle.current.signal;
     setBusy(true);
     setError("");
     try {
       await operation();
     } catch (e) {
-      if (!(e instanceof PasskeyCancelled))
+      if (!signal.aborted && !(e instanceof PasskeyCancelled))
         setError(e instanceof Error ? e.message : "처리하지 못했습니다.");
     } finally {
-      setBusy(false);
+      if (!signal.aborted) setBusy(false);
     }
   }
   function ask(next: string) {
@@ -131,7 +144,9 @@ export function SecurityPage(
         method: "POST",
         body: body({ proof: value.proof }),
       });
-      const credential = await createPasskey(options);
+      const signal = lifecycle.current.signal;
+      const credential = await createPasskey(options, signal);
+      signal.throwIfAborted();
       await request("/auth/passkeys/register/finish", {
         method: "POST",
         body: body({ proof: value.proof, name, credential }),
@@ -166,7 +181,9 @@ export function SecurityPage(
         method: "POST",
         body: body({ purpose: purpose() }),
       });
-      const credential = await getPasskey(options);
+      const signal = lifecycle.current.signal;
+      const credential = await getPasskey(options, signal);
+      signal.throwIfAborted();
       const value = await request<Proof>("/auth/passkeys/reauth/finish", {
         method: "POST",
         body: body({ credential }),
@@ -177,8 +194,9 @@ export function SecurityPage(
   return (
     <div className="stack security-page">
       <p className="muted">
-        내 계정의 로그인 수단을 관리합니다. 보안 수단을 변경하면 모든 기기에서
-        로그아웃됩니다.
+        내 계정의 로그인 수단을 관리합니다. TOTP 변경·복구 코드 재발급·Passkey
+        등록/삭제 시 모든 웹 세션이 종료됩니다. API 토큰은 유지되며 별도 폐기가
+        필요합니다.
       </p>
       <ErrorBox message={security.error || error} />
       {intent && (

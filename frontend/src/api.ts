@@ -109,6 +109,7 @@ export async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  options.signal?.throwIfAborted();
   const headers = new Headers(options.headers);
   if (options.body) headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD"].includes(options.method || "GET") && csrfToken)
@@ -118,8 +119,10 @@ export async function request<T>(
     headers,
     credentials: "same-origin",
   });
+  options.signal?.throwIfAborted();
   if (!response.ok) {
     const data = await response.json().catch(() => null);
+    options.signal?.throwIfAborted();
     const publicAuth = [
       "/auth/login",
       "/auth/options",
@@ -143,7 +146,9 @@ export async function request<T>(
     );
   }
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const data = (await response.json()) as T;
+  options.signal?.throwIfAborted();
+  return data;
 }
 export async function session(): Promise<User> {
   const data = await request<{ user: User; csrf_token: string }>("/auth/me");

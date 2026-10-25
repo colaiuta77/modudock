@@ -718,6 +718,7 @@ function Console({
           {view === "logs" && user.role === "admin" && <LogsPage {...props} />}{" "}
           {view === "security" && (
             <SecurityPage
+              key={user.id}
               {...props}
               onSignedOut={onSignedOut}
               onRecoveryCodes={onRecoveryCodes}

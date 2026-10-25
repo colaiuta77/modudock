@@ -4,6 +4,33 @@ import { request, signIn, signOut, completeMFA } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("취소한 요청의 늦은 401은 새 로그인 상태를 만료시키지 않는다", async () => {
+  const expired = vi.fn();
+  window.addEventListener("modudock:unauthorized", expired);
+  const controller = new AbortController();
+  let finish!: (value: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const result = request("/auth/security", { signal: controller.signal }).catch(
+    (e) => e,
+  );
+  controller.abort();
+  finish(
+    Response.json(
+      { error: { code: "unauthorized", message: "expired" } },
+      { status: 401 },
+    ),
+  );
+  expect(await result).toMatchObject({ name: "AbortError" });
+  expect(expired).not.toHaveBeenCalled();
+  window.removeEventListener("modudock:unauthorized", expired);
+});
+
 it("MFA 대기와 코드 오류는 로그인 완료나 세션 만료가 아니다", async () => {
   const expired = vi.fn();
   window.addEventListener("modudock:unauthorized", expired);
