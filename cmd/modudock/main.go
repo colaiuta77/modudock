@@ -32,7 +32,7 @@ func main() {
 }
 func run(args []string, in io.Reader, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: modudock serve|admin create|healthcheck|version")
+		return errors.New("usage: modudock serve|admin create|admin reset-mfa|healthcheck|version")
 	}
 	switch args[0] {
 	case "version":
@@ -83,8 +83,34 @@ func run(args []string, in io.Reader, out io.Writer) error {
 			return nil
 		}
 	case "admin":
+		if len(args) > 1 && args[1] == "reset-mfa" {
+			f := flag.NewFlagSet("admin reset-mfa", flag.ContinueOnError)
+			f.SetOutput(out)
+			dir := f.String("data-dir", "data", "Stopped server data directory")
+			username := f.String("username", "", "Account username")
+			confirmation := f.String("confirm-username", "", "Repeat the username to revoke all factors, sessions and API tokens")
+			if e := f.Parse(args[2:]); e != nil {
+				return e
+			}
+			if f.NArg() != 0 {
+				return errors.New("unexpected reset-mfa arguments")
+			}
+			if *username == "" || *confirmation != *username {
+				return errors.New("--confirm-username must exactly match --username")
+			}
+			s, e := core.Open(*dir, core.Options{Version: version})
+			if e != nil {
+				return e
+			}
+			defer s.Close()
+			if e = s.ResetMFA(*username); e != nil {
+				return e
+			}
+			fmt.Fprintln(out, "MFA, Passkeys, sessions and API tokens revoked. Password and role preserved.")
+			return nil
+		}
 		if len(args) < 2 || args[1] != "create" {
-			return errors.New("usage: modudock admin create --username NAME [--password-stdin]")
+			return errors.New("usage: modudock admin create|reset-mfa --username NAME")
 		}
 		f := flag.NewFlagSet("admin create", flag.ContinueOnError)
 		f.SetOutput(out)

@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"modudock/internal/core"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -23,6 +24,35 @@ func TestCLIAdminUsesStdinAndLocks(t *testing.T) {
 	err = run([]string{"admin", "create", "--data-dir", dir, "--username", "admin", "--password", "exposed"}, strings.NewReader(""), &output)
 	if err == nil {
 		t.Fatal("password argv accepted")
+	}
+}
+func TestResetMFARequiresExplicitConfirmation(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	for _, extra := range [][]string{nil, {"--confirm-username", "other"}} {
+		args := append([]string{"admin", "reset-mfa", "--data-dir", dir, "--username", "admin"}, extra...)
+		if e := run(args, strings.NewReader(""), &out); e == nil || !strings.Contains(e.Error(), "confirm-username") {
+			t.Fatalf("expected explicit confirmation error, got %v", e)
+		}
+	}
+	if e := run([]string{"admin", "create", "--data-dir", dir, "--username", "admin", "--password-stdin"}, strings.NewReader("test-password-1234"), &out); e != nil {
+		t.Fatal(e)
+	}
+	if e := run([]string{"admin", "reset-mfa", "--data-dir", dir, "--username", "admin", "--confirm-username", "admin"}, strings.NewReader(""), &out); e != nil {
+		t.Fatal(e)
+	}
+}
+func TestResetMFARefusesRunningDataDirectory(t *testing.T) {
+	dir := t.TempDir()
+	s, e := core.Open(dir, core.Options{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	var out bytes.Buffer
+	e = run([]string{"admin", "reset-mfa", "--data-dir", dir, "--username", "admin", "--confirm-username", "admin"}, strings.NewReader(""), &out)
+	if e == nil || !strings.Contains(e.Error(), "already in use") {
+		t.Fatalf("expected data lock error, got %v", e)
 	}
 }
 func TestHealthcheckRequiresExactHealth(t *testing.T) {
