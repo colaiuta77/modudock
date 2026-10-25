@@ -9,10 +9,11 @@ UI가 포함된 Go 실행파일 하나로 설치하는 자동화·플러그인 �
 - Go HTTP API, SQLite WAL, 내장 영속 작업 큐와 스케줄러.
 - React·Vite 8·Tailwind CSS·shadcn/ui·Lucide 관리 화면.
 - 관리자/운영자/조회자, 계정 관리, 세션·CSRF, 만료·권한 범위가 있는 API 토큰.
+- 계정별 TOTP QR 등록·일회용 복구 코드·Passkey와 오프라인 비상 복구.
 - GitHub 플러그인 설치·업데이트·롤백, 선언형 메뉴·설정·작업·리소스.
 - 작업 이력·취소·진행률, cron·시간대 스케줄, 시스템·작업 로그.
 
-2FA, 고급 세션 관리 화면, 파일관리, 터미널은 아직 구현 범위가 아닙니다.
+고급 세션 관리 화면, 파일관리, 터미널은 아직 구현 범위가 아닙니다.
 
 ## 시작
 
@@ -52,6 +53,7 @@ node scripts/smoke.mjs dist/modudock-linux-amd64
 ## 문서
 
 - [API 계약](docs/api-contract.md). 실제 로그인 후 `/api/v1/openapi.json`에서도 조회합니다.
+- [MFA·Passkey 설정과 비상 복구](docs/account-security.md).
 - [플러그인 개발](docs/plugin-development.md).
 - [설계 결정](docs/design.md).
 - [검증 기록](docs/verification.md).

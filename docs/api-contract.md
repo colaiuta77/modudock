@@ -4,7 +4,7 @@
 
 ## 인증·계정·토큰
 
-- `POST /auth/login` body `{username,password}` → `{user,csrf_token}`와 HttpOnly 세션 쿠키.
+- `POST /auth/login` body `{username,password}` → MFA가 없으면 200 `{user,csrf_token}`와 HttpOnly 세션 쿠키. TOTP 계정은 202 `{mfa_required:true,expires_at}`와 5분 대기 쿠키만 반환한다.
 - `GET /auth/me` → `{user,csrf_token}`. API token 요청의 csrf_token은 빈 문자열이다.
 - `POST /auth/logout` → 204, 세션 폐기.
 - `PUT /auth/password` body `{current_password,new_password}` → 204, 모든 기존 세션·API token 폐기.
@@ -13,6 +13,34 @@
 - 관리자 `GET/POST /users`, `PUT/DELETE /users/{id}`. 생성 `{username,password,role}`, 변경 `{username,role,is_active,password?}`. 마지막 활성 관리자 제거·강등 금지. 자기 삭제 금지. 비밀번호 재설정·비활성화·역할 변경은 세션과 토큰 폐기.
 - 관리자 `GET/POST /tokens`, `DELETE /tokens/{id}`. 생성 `{name,scopes:[...],expires_at}` → `{token,metadata}`. owner는 생성 관리자 본인. 허용 scopes는 `status:read`, `plugins:read`, `plugins:write`, `runs:read`, `runs:write`, `schedules:read`, `schedules:write`, `logs:read`, `users:write`, `tokens:write`. 토큰은 해시로 저장한다.
 - Token metadata는 `{id,name,scopes,expires_at,created_at}`다. `/auth/me`는 유효한 토큰이라면 scope와 무관하게 본인 정보만 반환한다.
+
+## 계정 보안
+
+아래 공개 인증 요청도 POST에는 정확한 `Origin`이 필요하다. 대기 쿠키는 정상 인증 세션이 아니다.
+
+- `GET /auth/options` → `{passkey_available,passkey_reason}`.
+- `POST /auth/mfa` body `{method:"totp"|"recovery",code}`와 대기 쿠키 → 200 Auth. 코드 오류·만료는 401, 실패 예산 초과는 429다.
+- `POST /auth/login/cancel` → 204, 대기 상태/쿠키 폐기.
+- `POST /auth/passkey/begin` body `{}` → `{publicKey:...}`와 대기 쿠키.
+- `POST /auth/passkey/finish` body `{credential:...}`와 대기 쿠키 → 200 Auth. credential은 브라우저 `PublicKeyCredential.toJSON()` 결과다.
+
+다음은 본인 브라우저 세션만 허용한다. 모든 변경에 Origin/CSRF를 검사하며 Bearer는 scope와 무관하게 403이다.
+
+- `GET /auth/security` → `{totp_enabled,recovery_codes_remaining,passkeys:[{id,name,created_at,last_used_at}],passkey_available,passkey_reason}`. 기존 비밀 키와 복구 코드 원문은 반환하지 않는다.
+- `POST /auth/reauth` body `{purpose,password,method?,code?}` → `{proof,expires_at}`. TOTP가 켜져 있으면 method/code도 필요하다. 목적은 `totp-setup`, `totp-disable`, `recovery-regenerate`, `passkey-register`, `passkey-delete:<id>`다.
+- `POST /auth/totp/setup` body `{proof}` → `{secret,qr_png,expires_at}`. QR은 PNG data URL이고 등록 대기는 10분이다. setup은 proof를 소비하지 않는다.
+- `DELETE /auth/totp/setup` → 204, 현재 세션의 등록 대기만 취소.
+- `POST /auth/totp/confirm` body `{proof,code}` → `{recovery_codes:[...],signed_out:true}`. 최종 변경 시 5분 proof를 소비하고 전체 웹 세션을 종료한다.
+- `DELETE /auth/totp` body `{proof}` → 204, TOTP/복구 코드 삭제와 전체 웹 세션 종료.
+- `POST /auth/recovery-codes` body `{proof}` → `{recovery_codes:[...],signed_out:true}`. 기존 코드 전체 무효화.
+- `POST /auth/passkeys/register/begin` body `{proof}` → `{publicKey:...}`와 세션에 연결된 ceremony 쿠키.
+- `POST /auth/passkeys/register/finish` body `{proof,name,credential}` → `{signed_out:true}`.
+- `POST /auth/passkeys/reauth/begin` body `{purpose}` → `{publicKey:...}`와 ceremony 쿠키.
+- `POST /auth/passkeys/reauth/finish` body `{credential}` → `{proof,expires_at}`.
+- `PUT /auth/passkeys/{id}` body `{name}` → `{name}`, 로그인 유지.
+- `DELETE /auth/passkeys/{id}` body `{proof}` → 204, 전체 웹 세션 종료.
+
+재인증 오류·만료는 403 `reauth_required`다. 원문 복구 코드는 최종 응답에서 한 번만 보내므로 클라이언트는 로그인 UI 밖 메모리에서 저장 확인까지 표시해야 한다. 보안 수단 변경은 자동화 토큰을 보존하고, 비밀번호/역할/활성 상태 변경 및 비상 복구는 토큰까지 폐기한다.
 
 ## 상태·로그
 
