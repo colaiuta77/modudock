@@ -1046,6 +1046,78 @@ progress::-webkit-progress-value {
     padding-left: 8px;
   }
 }
+.security-page {
+  max-width: 1100px;
+}
+.security-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+.security-actions > .field {
+  flex: 1;
+  min-width: 180px;
+}
+.totp-qr {
+  display: block;
+  width: min(300px, 100%);
+  height: auto;
+  background: white;
+  border-radius: 12px;
+  padding: 8px;
+}
+.secret-value {
+  font-family: ui-monospace, monospace;
+}
+.security-hint {
+  padding: 12px 16px;
+  border: 1px solid #b9d9fa;
+  border-radius: 8px;
+  background: #edf6ff;
+}
+.passkey-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+.passkey-row > div:first-child {
+  flex: 1;
+  min-width: 180px;
+}
+.recovery-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.recovery-page h1 {
+  font-size: clamp(22px, 4vw, 30px);
+}
+.recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 10px;
+}
+.recovery-grid code {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--background);
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.security-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.security-check input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

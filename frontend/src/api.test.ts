@@ -1,8 +1,31 @@
 // 실제 API 클라이언트의 CSRF 전달과 오류 응답 처리를 검증한다.
 import { afterEach, expect, it, vi } from "vitest";
-import { request, signIn, signOut } from "./api";
+import { request, signIn, signOut, completeMFA } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("MFA 대기와 코드 오류는 로그인 완료나 세션 만료가 아니다", async () => {
+  const expired = vi.fn();
+  window.addEventListener("modudock:unauthorized", expired);
+  vi.stubGlobal("fetch", async (path: string) =>
+    path.endsWith("/login")
+      ? Response.json(
+          { mfa_required: true, expires_at: "2099-01-01T00:00:00Z" },
+          { status: 202 },
+        )
+      : Response.json(
+          { error: { code: "invalid_credentials", message: "잘못된 코드" } },
+          { status: 401 },
+        ),
+  );
+  expect(await signIn("admin", "password")).toHaveProperty(
+    "mfa_required",
+    true,
+  );
+  await expect(completeMFA("totp", "000000")).rejects.toThrow("잘못된 코드");
+  expect(expired).not.toHaveBeenCalled();
+  window.removeEventListener("modudock:unauthorized", expired);
+});
 
 it("로그인에서 받은 CSRF 토큰을 변경 요청에 전달한다", async () => {
   const calls: Array<{ path: string; init?: RequestInit }> = [];

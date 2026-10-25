@@ -1,4 +1,5 @@
 // 세션과 CSRF를 사용하는 v1 API 클라이언트를 제공한다.
+import { getPasskey } from "./webauthn";
 export type User = {
   id: string;
   username: string;
@@ -97,6 +98,7 @@ export class APIError extends Error {
   constructor(
     message: string,
     public status: number,
+    public code = "",
   ) {
     super(message);
   }
@@ -117,14 +119,27 @@ export async function request<T>(
     credentials: "same-origin",
   });
   if (!response.ok) {
-    if (response.status === 401 && path !== "/auth/login") {
+    const data = await response.json().catch(() => null);
+    const publicAuth = [
+      "/auth/login",
+      "/auth/options",
+      "/auth/mfa",
+      "/auth/passkey/begin",
+      "/auth/passkey/finish",
+      "/auth/login/cancel",
+    ];
+    if (
+      response.status === 401 &&
+      data?.error?.code !== "invalid_credentials" &&
+      !publicAuth.includes(path)
+    ) {
       csrfToken = "";
       window.dispatchEvent(new Event("modudock:unauthorized"));
     }
-    const data = await response.json().catch(() => null);
     throw new APIError(
       data?.error?.message || `요청에 실패했습니다. (${response.status})`,
       response.status,
+      data?.error?.code,
     );
   }
   if (response.status === 204) return undefined as T;
@@ -138,11 +153,48 @@ export async function session(): Promise<User> {
 export async function signIn(
   username: string,
   password: string,
+  signal?: AbortSignal,
+): Promise<LoginResult> {
+  const data = await request<LoginResult>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+    signal,
+  });
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+  csrfToken = "user" in data ? data.csrf_token : "";
+  return data;
+}
+export type LoginResult =
+  | { user: User; csrf_token: string }
+  | { mfa_required: true; expires_at: string };
+type AuthResponse = { user: User; csrf_token: string };
+export async function completeMFA(
+  method: "totp" | "recovery",
+  code: string,
+  signal?: AbortSignal,
 ): Promise<User> {
-  const data = await request<{ user: User; csrf_token: string }>(
-    "/auth/login",
-    { method: "POST", body: JSON.stringify({ username, password }) },
-  );
+  const data = await request<AuthResponse>("/auth/mfa", {
+    method: "POST",
+    body: JSON.stringify({ method, code }),
+    signal,
+  });
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+  csrfToken = data.csrf_token;
+  return data.user;
+}
+export async function signInWithPasskey(signal?: AbortSignal): Promise<User> {
+  const options = await request<unknown>("/auth/passkey/begin", {
+    method: "POST",
+    body: "{}",
+    signal,
+  });
+  const credential = await getPasskey(options, signal);
+  const data = await request<AuthResponse>("/auth/passkey/finish", {
+    method: "POST",
+    body: JSON.stringify({ credential }),
+    signal,
+  });
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
   csrfToken = data.csrf_token;
   return data.user;
 }

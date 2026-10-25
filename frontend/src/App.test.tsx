@@ -33,6 +33,29 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+it("MFA 로그인 대기에서는 콘솔을 열지 않고 코드를 요청한다", async () => {
+  vi.stubGlobal("fetch", async (path: string) =>
+    path.endsWith("/auth/login")
+      ? Response.json(
+          { mfa_required: true, expires_at: "2099-01-01T00:00:00Z" },
+          { status: 202 },
+        )
+      : path.endsWith("/auth/options")
+        ? Response.json({ passkey_available: false, passkey_reason: "" })
+        : Response.json(
+            { error: { code: "unauthorized", message: "로그인 필요" } },
+            { status: 401 },
+          ),
+  );
+  render(<App />);
+  await userEvent.type(await screen.findByLabelText("사용자 이름"), "admin");
+  await userEvent.type(screen.getByLabelText("비밀번호"), "password");
+  await userEvent.click(screen.getByRole("button", { name: "로그인" }));
+  expect(await screen.findByLabelText("인증 코드")).toBeTruthy();
+  expect(screen.queryByRole("navigation")).toBeNull();
+  expect(screen.queryByLabelText("비밀번호")).toBeNull();
+});
+
 function serve(
   role = "admin",
   reply?: (path: string, init?: RequestInit) => Response | undefined,
@@ -55,6 +78,57 @@ function serve(
     return Response.json({ items: [], total: 0 });
   });
 }
+it("보안 변경으로 로그아웃해도 새 복구 코드가 저장 확인까지 남는다", async () => {
+  serve("admin", (path) =>
+    path.endsWith("/auth/security")
+      ? Response.json({
+          totp_enabled: false,
+          recovery_codes_remaining: 0,
+          passkeys: [],
+          passkey_available: false,
+          passkey_reason: "",
+        })
+      : path.endsWith("/auth/reauth")
+        ? Response.json({ proof: "p", expires_at: "2099-01-01T00:00:00Z" })
+        : path.endsWith("/auth/totp/setup")
+          ? Response.json({
+              secret: "ABCDEF",
+              qr_png: "data:image/png;base64,test",
+              expires_at: "2099-01-01T00:00:00Z",
+            })
+          : path.endsWith("/auth/totp/confirm")
+            ? Response.json({
+                recovery_codes: ["ONE-TIME-RECOVERY"],
+                signed_out: true,
+              })
+            : undefined,
+  );
+  render(<App />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "계정 보안" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "2FA 설정" }),
+  );
+  await userEvent.type(
+    screen.getByLabelText("재인증 비밀번호"),
+    "test-password",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "인증 후 계속" }));
+  await userEvent.type(await screen.findByLabelText("인증 코드"), "012345");
+  await userEvent.click(screen.getByRole("button", { name: "인증 및 활성화" }));
+  expect(await screen.findByText("ONE-TIME-RECOVERY")).toBeTruthy();
+  expect(screen.queryByRole("navigation")).toBeNull();
+  expect(localStorage.getItem("recovery_codes")).toBeNull();
+  await userEvent.click(
+    screen.getByLabelText("복구 코드를 안전한 곳에 저장했습니다."),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "저장 확인 후 로그인" }),
+  );
+  expect(await screen.findByRole("button", { name: "로그인" })).toBeTruthy();
+  expect(screen.queryByText("ONE-TIME-RECOVERY")).toBeNull();
+});
 it("사이드바 접기 상태를 재접속에도 보존한다", async () => {
   serve();
   const view = render(<App />);

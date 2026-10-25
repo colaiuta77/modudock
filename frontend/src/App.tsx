@@ -1,5 +1,11 @@
 // ModuDock Go의 관리 콘솔을 구성한다.
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   Activity,
   Anchor,
@@ -19,6 +25,8 @@ import {
   RefreshCw,
   ScrollText,
   Settings,
+  ShieldCheck,
+  Fingerprint,
   Users,
   Zap,
   type LucideIcon,
@@ -27,6 +35,9 @@ import {
   session,
   signIn,
   signOut,
+  completeMFA,
+  signInWithPasskey,
+  request,
   type User,
   type List,
   type Menu,
@@ -51,7 +62,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "./components/ui/sheet";
-import { UsersPage, TokensPage, PasswordPage, MenusPage } from "./Settings";
+import { UsersPage, TokensPage, MenusPage } from "./Settings";
+import { SecurityPage, RecoveryCodes } from "./Security";
+import { passkeyBrowserSupport, PasskeyCancelled } from "./webauthn";
 import { RunsPage, SchedulesPage, LogsPage } from "./Operations";
 import { PluginsPage, PluginWorkspace } from "./Plugins";
 
@@ -73,7 +86,7 @@ const settings: NavItem[] = [
   { id: "tokens", title: "API 토큰", icon: KeyRound, admin: true },
   { id: "menus", title: "메뉴 편집", icon: ListTree, admin: true },
   { id: "logs", title: "전체 로그", icon: ScrollText, admin: true },
-  { id: "password", title: "비밀번호 변경", icon: KeyRound },
+  { id: "security", title: "계정 보안", icon: ShieldCheck },
 ];
 const menuIcons: Record<string, LucideIcon> = {
   puzzle: Puzzle,
@@ -89,17 +102,66 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  const [pending, setPending] = useState("");
+  const [method, setMethod] = useState<"totp" | "recovery">("totp");
+  const [code, setCode] = useState("");
+  const [options, setOptions] = useState<{
+    passkey_available: boolean;
+    passkey_reason: string;
+  }>();
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    request<{ passkey_available: boolean; passkey_reason: string }>(
+      "/auth/options",
+      { signal: controller.signal },
+    )
+      .then(setOptions)
+      .catch(() => {});
+    return () => {
+      controller.abort();
+      active.current?.abort();
+    };
+  }, []);
+  const passkeyReason =
+    passkeyBrowserSupport() || options?.passkey_reason || "";
+  async function authenticate(passkey = false) {
+    active.current?.abort();
+    const controller = new AbortController();
+    active.current = controller;
     setBusy(true);
     setError("");
     try {
-      onLogin(await signIn(username, password));
+      if (passkey) {
+        const user = await signInWithPasskey(controller.signal);
+        if (!controller.signal.aborted) onLogin(user);
+      } else if (pending) {
+        const user = await completeMFA(method, code, controller.signal);
+        if (!controller.signal.aborted) {
+          setCode("");
+          onLogin(user);
+        }
+      } else {
+        const result = await signIn(username, password, controller.signal);
+        if (controller.signal.aborted) return;
+        setPassword("");
+        if ("mfa_required" in result) {
+          setPending(result.expires_at);
+          setCode("");
+        } else {
+          onLogin(result.user);
+        }
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "로그인하지 못했습니다.");
+      if (!controller.signal.aborted && !(e instanceof PasskeyCancelled))
+        setError(e instanceof Error ? e.message : "로그인하지 못했습니다.");
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted) setBusy(false);
     }
+  }
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    await authenticate();
   }
   return (
     <main className="login-page">
@@ -112,29 +174,106 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
         </h1>
       </div>
       <Card className="login-card">
-        <h2>다시 만나 반갑습니다.</h2>
-        <p className="muted">자동화와 플러그인을 한 곳에서 관리하세요.</p>
+        <h2>{pending ? "2단계 인증" : "다시 만나 반갑습니다."}</h2>
+        <p className="muted">
+          {pending
+            ? "인증 앱의 6자리 코드 또는 일회용 복구 코드를 입력하세요."
+            : "자동화와 플러그인을 한 곳에서 관리하세요."}
+        </p>
         <form onSubmit={submit} className="stack">
-          <Field label="사용자 이름">
-            <Input
-              required
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-          </Field>
-          <Field label="비밀번호">
-            <Input
-              required
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
+          {pending ? (
+            <>
+              <Field label="인증 방법">
+                <select
+                  disabled={busy}
+                  value={method}
+                  onChange={(e) => {
+                    setMethod(e.target.value as "totp" | "recovery");
+                    setCode("");
+                    setError("");
+                  }}
+                >
+                  <option value="totp">인증 앱</option>
+                  <option value="recovery">복구 코드</option>
+                </select>
+              </Field>
+              <Field label={method === "totp" ? "인증 코드" : "복구 코드"}>
+                <Input
+                  autoFocus
+                  required
+                  autoComplete="one-time-code"
+                  inputMode={method === "totp" ? "numeric" : "text"}
+                  pattern={method === "totp" ? "[0-9]{6}" : undefined}
+                  maxLength={method === "totp" ? 6 : 40}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </Field>
+              <p className="muted small">
+                인증 대기는 5분 후 만료됩니다. 만료되면 취소 후 다시
+                로그인하세요.
+              </p>
+            </>
+          ) : (
+            <>
+              <Field label="사용자 이름">
+                <Input
+                  required
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </Field>
+              <Field label="비밀번호">
+                <Input
+                  required
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+            </>
+          )}
           <ErrorBox message={error} />
-          <Button disabled={busy}>{busy ? "확인 중…" : "로그인"}</Button>
+          <Button disabled={busy}>
+            {busy ? "확인 중…" : pending ? "인증 후 로그인" : "로그인"}
+          </Button>
+          {pending && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                active.current?.abort();
+                setBusy(true);
+                void request("/auth/login/cancel", { method: "POST" })
+                  .catch(() => {})
+                  .finally(() => {
+                    setPending("");
+                    setCode("");
+                    setPassword("");
+                    setError("");
+                    setBusy(false);
+                  });
+              }}
+            >
+              로그인 취소
+            </Button>
+          )}
         </form>
+        {!pending && (
+          <>
+            <Button
+              variant="outline"
+              disabled={busy || !options?.passkey_available || !!passkeyReason}
+              onClick={() => void authenticate(true)}
+            >
+              <Fingerprint />
+              Passkey로 로그인
+            </Button>
+            {passkeyReason && <p className="muted small">{passkeyReason}</p>}
+          </>
+        )}
         <p className="muted small">
           첫 설치라면 서버에서 관리자 계정을 먼저 생성해 주세요.
         </p>
@@ -145,6 +284,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 }
 
 export default function App() {
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true),
     [view, setView] = useState("overview"),
@@ -209,6 +349,13 @@ export default function App() {
     };
   }, [user, changed]);
   const action = useAction(notify);
+  if (recoveryCodes.length)
+    return (
+      <RecoveryCodes
+        codes={recoveryCodes}
+        onClose={() => setRecoveryCodes([])}
+      />
+    );
   if (checking)
     return (
       <main className="loading-page" aria-busy="true">
@@ -251,6 +398,7 @@ export default function App() {
         setUser(null);
         setView("overview");
       }}
+      onRecoveryCodes={setRecoveryCodes}
       onLogout={() =>
         void action.perform(async () => {
           await signOut();
@@ -277,6 +425,7 @@ function Console({
   onSettings,
   onDismiss,
   onSignedOut,
+  onRecoveryCodes,
   onLogout,
 }: {
   user: User;
@@ -294,6 +443,7 @@ function Console({
   onSettings: () => void;
   onDismiss: () => void;
   onSignedOut: () => void;
+  onRecoveryCodes: (codes: string[]) => void;
   onLogout: () => void;
 }) {
   const status = useLoad<Status>("/status", revision),
@@ -566,8 +716,12 @@ function Console({
             <MenusPage {...props} />
           )}{" "}
           {view === "logs" && user.role === "admin" && <LogsPage {...props} />}{" "}
-          {view === "password" && (
-            <PasswordPage {...props} onSignedOut={onSignedOut} />
+          {view === "security" && (
+            <SecurityPage
+              {...props}
+              onSignedOut={onSignedOut}
+              onRecoveryCodes={onRecoveryCodes}
+            />
           )}{" "}
           {view.startsWith("plugin:") && (
             <PluginWorkspace
