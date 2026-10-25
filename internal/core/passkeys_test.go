@@ -235,11 +235,12 @@ func TestPasskeyLimitAndConcurrentFinish(t *testing.T) {
 	begin := passkeyRequest(c, "passkey/begin", map[string]any{}, nil)
 	options := authJSON(t, begin, 200)
 	credential := key.assertion(t, options, "")
+	cookies := begin.Result().Cookies()
 	var wins atomic.Int32
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Go(func() {
-			if passkeyRequest(c, "passkey/finish", map[string]any{"credential": credential}, begin.Result().Cookies()).Code == 200 {
+			if passkeyRequest(c, "passkey/finish", map[string]any{"credential": credential}, cookies).Code == 200 {
 				wins.Add(1)
 			}
 		})
