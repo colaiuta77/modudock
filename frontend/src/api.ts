@@ -104,12 +104,15 @@ export class APIError extends Error {
   }
 }
 let csrfToken = "";
+const pendingSecurityChanges = new Set<Promise<void>>();
 
 export async function request<T>(
   path: string,
   options: RequestInit = {},
+  waitForSecurityChanges = true,
 ): Promise<T> {
   options.signal?.throwIfAborted();
+  const requestCSRF = csrfToken;
   const headers = new Headers(options.headers);
   if (options.body) headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD"].includes(options.method || "GET") && csrfToken)
@@ -136,8 +139,13 @@ export async function request<T>(
       data?.error?.code !== "invalid_credentials" &&
       !publicAuth.includes(path)
     ) {
-      csrfToken = "";
-      window.dispatchEvent(new Event("modudock:unauthorized"));
+      // 쿠키 교체 응답보다 먼저 도착한 배경 요청의 401은 교체 결과를 기다린다.
+      if (waitForSecurityChanges) await Promise.all(pendingSecurityChanges);
+      options.signal?.throwIfAborted();
+      if (requestCSRF === csrfToken) {
+        csrfToken = "";
+        window.dispatchEvent(new Event("modudock:unauthorized"));
+      }
     }
     throw new APIError(
       data?.error?.message || `요청에 실패했습니다. (${response.status})`,
@@ -172,7 +180,28 @@ export async function signIn(
 export type LoginResult =
   | { user: User; csrf_token: string }
   | { mfa_required: true; expires_at: string };
-type AuthResponse = { user: User; csrf_token: string };
+export type AuthResponse = { user: User; csrf_token: string };
+export function acceptSession(data: AuthResponse) {
+  csrfToken = data.csrf_token;
+}
+export async function changeSecurity<T extends AuthResponse>(
+  path: string,
+  options: RequestInit,
+): Promise<T> {
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  pendingSecurityChanges.add(pending);
+  try {
+    const result = await request<T>(path, options, false);
+    acceptSession(result);
+    return result;
+  } finally {
+    pendingSecurityChanges.delete(pending);
+    finish();
+  }
+}
 export async function completeMFA(
   method: "totp" | "recovery",
   code: string,

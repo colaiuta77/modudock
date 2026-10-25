@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { SecurityPage, RecoveryCodes } from "./Security";
 import * as webauthn from "./webauthn";
+import { request } from "./api";
 const user = {
   id: "u",
   username: "admin",
@@ -46,8 +47,7 @@ function serve(
 }
 it("QR와 수동 키를 표시하고 잘못된 코드를 수정할 수 있다", async () => {
   let tries = 0;
-  const signedOut = vi.fn(),
-    codes = vi.fn();
+  const signedOut = vi.fn();
   serve((path, init) => {
     if (path.endsWith("/confirm")) {
       tries++;
@@ -64,7 +64,8 @@ it("QR와 수동 키를 표시하고 잘못된 코드를 수정할 수 있다", 
           )
         : Response.json({
             recovery_codes: ["RECOVERY-CODE"],
-            signed_out: true,
+            csrf_token: "new-csrf",
+            user,
           });
     }
   });
@@ -74,7 +75,6 @@ it("QR와 수동 키를 표시하고 잘못된 코드를 수정할 수 있다", 
       changed={vi.fn()}
       notify={vi.fn()}
       onSignedOut={signedOut}
-      onRecoveryCodes={codes}
     />,
   );
   await userEvent.click(
@@ -95,8 +95,9 @@ it("QR와 수동 키를 표시하고 잘못된 코드를 수정할 수 있다", 
   expect(await screen.findByText("코드를 확인하세요.")).toBeTruthy();
   expect(screen.getByLabelText("시크릿 키")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "인증 및 활성화" }));
-  await waitFor(() => expect(codes).toHaveBeenCalledWith(["RECOVERY-CODE"]));
-  expect(signedOut).toHaveBeenCalled();
+  expect(await screen.findByText("RECOVERY-CODE")).toBeTruthy();
+  expect(screen.queryByLabelText("시크릿 키")).toBeNull();
+  expect(signedOut).not.toHaveBeenCalled();
 });
 it("등록 취소 시 QR와 비밀 키를 화면에서 제거한다", async () => {
   serve((path, init) =>
@@ -110,7 +111,6 @@ it("등록 취소 시 QR와 비밀 키를 화면에서 제거한다", async () =
       changed={vi.fn()}
       notify={vi.fn()}
       onSignedOut={vi.fn()}
-      onRecoveryCodes={vi.fn()}
     />,
   );
   await userEvent.click(
@@ -136,7 +136,7 @@ it("복구 코드는 저장소 없이 저장 확인 전까지만 보여 준다",
     screen.getByLabelText("복구 코드를 안전한 곳에 저장했습니다."),
   );
   await userEvent.click(
-    screen.getByRole("button", { name: "저장 확인 후 로그인" }),
+    screen.getByRole("button", { name: "저장 확인 후 닫기" }),
   );
   expect(close).toHaveBeenCalled();
 });
@@ -161,7 +161,6 @@ it("화면 이탈 뒤 도착한 재인증은 후속 등록을 시작하지 않�
       changed={vi.fn()}
       notify={vi.fn()}
       onSignedOut={vi.fn()}
-      onRecoveryCodes={vi.fn()}
     />,
   );
   await userEvent.click(
@@ -187,14 +186,12 @@ it("계정 전환 뒤 늦은 복구 코드는 새 계정 화면에 표시하지 
   const pending = new Promise<Response>((resolve) => {
     finish = resolve;
   });
-  const codes = vi.fn(),
-    signedOut = vi.fn();
+  const signedOut = vi.fn();
   serve((path) => (path.endsWith("/confirm") ? pending : undefined));
   const props = {
     changed: vi.fn(),
     notify: vi.fn(),
     onSignedOut: signedOut,
-    onRecoveryCodes: codes,
   };
   const view = render(<SecurityPage key={user.id} user={user} {...props} />);
   await userEvent.click(
@@ -215,11 +212,12 @@ it("계정 전환 뒤 늦은 복구 코드는 새 계정 화면에 표시하지 
     finish(
       Response.json({
         recovery_codes: ["OLD-ACCOUNT-SECRET"],
-        signed_out: true,
+        csrf_token: "old-account-csrf",
+        user,
       }),
     );
   });
-  expect(codes).not.toHaveBeenCalled();
+  expect(screen.queryByText("OLD-ACCOUNT-SECRET")).toBeNull();
   expect(signedOut).not.toHaveBeenCalled();
 });
 
@@ -249,7 +247,6 @@ it("화면 이탈은 인증기 창을 취소하고 늦은 등록 결과를 버�
       changed={vi.fn()}
       notify={vi.fn()}
       onSignedOut={vi.fn()}
-      onRecoveryCodes={vi.fn()}
     />,
   );
   await userEvent.type(screen.getByLabelText("새 Passkey 이름"), "기기");
@@ -270,6 +267,101 @@ it("화면 이탈은 인증기 창을 취소하고 늦은 등록 결과를 버�
   expect(paths.some((path) => path.endsWith("/register/finish"))).toBe(false);
 });
 
+it.each(["복구 코드 재생성", "2FA 비활성화", "Passkey 추가", "내 기기 삭제"])(
+  "%s 후 설정 화면과 새 CSRF를 유지한다",
+  async (action) => {
+    let changed = false;
+    let sentCSRF: string | null = null;
+    const signedOut = vi.fn();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(webauthn, "passkeyBrowserSupport").mockReturnValue("");
+    vi.spyOn(webauthn, "createPasskey").mockResolvedValue({ id: "new-key" });
+    serve((path, init) => {
+      if (path.endsWith("/security"))
+        return Response.json({
+          totp_enabled:
+            action === "Passkey 추가"
+              ? false
+              : !(changed && action === "2FA 비활성화"),
+          recovery_codes_remaining:
+            changed && action === "2FA 비활성화" ? 0 : 10,
+          passkeys:
+            changed && action === "내 기기 삭제"
+              ? []
+              : [
+                  {
+                    id: "key",
+                    name:
+                      changed && action === "Passkey 추가"
+                        ? "새 기기"
+                        : "내 기기",
+                    created_at: "2026-10-25",
+                    last_used_at: "",
+                  },
+                ],
+          passkey_available: true,
+          passkey_reason: "",
+        });
+      if (path.endsWith("/begin")) return Response.json({ publicKey: {} });
+      if (path.endsWith("/probe")) {
+        sentCSRF = new Headers(init?.headers).get("X-CSRF-Token");
+        return new Response(null, { status: 204 });
+      }
+      if (
+        path.endsWith("/recovery-codes") ||
+        path.endsWith("/totp") ||
+        path.endsWith("/register/finish") ||
+        (path.endsWith("/passkeys/key") && init?.method === "DELETE")
+      ) {
+        changed = true;
+        return Response.json({
+          user,
+          csrf_token: "rotated-token",
+          ...(action === "복구 코드 재생성"
+            ? { recovery_codes: ["NEW-RECOVERY"] }
+            : {}),
+        });
+      }
+    });
+    render(
+      <SecurityPage
+        user={user}
+        changed={vi.fn()}
+        notify={vi.fn()}
+        onSignedOut={signedOut}
+      />,
+    );
+    await screen.findByText("복구 코드 10개 남음");
+    if (action === "Passkey 추가")
+      await userEvent.type(screen.getByLabelText("새 Passkey 이름"), "새 기기");
+    await userEvent.click(screen.getByRole("button", { name: action }));
+    await userEvent.type(
+      screen.getByLabelText("재인증 비밀번호"),
+      "test-password",
+    );
+    if (action !== "Passkey 추가")
+      await userEvent.type(screen.getByLabelText("재인증 코드"), "123456");
+    await userEvent.click(screen.getByRole("button", { name: "인증 후 계속" }));
+    await waitFor(() => expect(changed).toBe(true));
+    if (action === "복구 코드 재생성")
+      expect(await screen.findByText("NEW-RECOVERY")).toBeTruthy();
+    if (action === "2FA 비활성화")
+      expect(await screen.findByText("비활성화됨")).toBeTruthy();
+    if (action === "Passkey 추가")
+      expect(
+        await screen.findByLabelText("Passkey 이름 · 새 기기"),
+      ).toBeTruthy();
+    if (action === "내 기기 삭제")
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Passkey 이름 · 내 기기")).toBeNull(),
+      );
+    expect(signedOut).not.toHaveBeenCalled();
+    await request("/probe", { method: "POST" });
+    expect(sentCSRF).toBe("rotated-token");
+    expect(screen.getByRole("heading", { name: "2단계 인증" })).toBeTruthy();
+  },
+);
+
 it("웹 세션 종료와 API 토큰 유지의 차이를 안내한다", async () => {
   serve();
   render(
@@ -278,7 +370,6 @@ it("웹 세션 종료와 API 토큰 유지의 차이를 안내한다", async () 
       changed={vi.fn()}
       notify={vi.fn()}
       onSignedOut={vi.fn()}
-      onRecoveryCodes={vi.fn()}
     />,
   );
   expect(await screen.findByText(/API 토큰은 유지되며/)).toBeTruthy();

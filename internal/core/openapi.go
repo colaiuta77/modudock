@@ -131,7 +131,7 @@ func securityAPISchemas(schemas map[string]any) []apiOperation {
 	schemas["ProofRequest"] = objectSchema(map[string]any{"proof": secret}, "proof")
 	schemas["TOTPSetup"] = objectSchema(map[string]any{"secret": secret, "qr_png": secret, "expires_at": date}, "secret", "qr_png", "expires_at")
 	schemas["TOTPConfirm"] = objectSchema(map[string]any{"proof": secret, "code": secret}, "proof", "code")
-	schemas["RecoveryCodes"] = objectSchema(map[string]any{"recovery_codes": arraySchema(secret), "signed_out": map[string]any{"const": true}}, "recovery_codes", "signed_out")
+	schemas["RecoveryCodes"] = objectSchema(map[string]any{"recovery_codes": arraySchema(secret), "user": schemaRef("User"), "csrf_token": secret}, "recovery_codes", "user", "csrf_token")
 	schemas["AccountSecurity"] = objectSchema(map[string]any{"totp_enabled": boolean, "recovery_codes_remaining": map[string]any{"type": "integer"}, "passkeys": arraySchema(map[string]any{"type": "object"}), "passkey_available": boolean, "passkey_reason": text}, "totp_enabled", "recovery_codes_remaining", "passkeys", "passkey_available", "passkey_reason")
 	schemas["PasskeyMetadata"] = objectSchema(map[string]any{"id": text, "name": text, "created_at": date, "last_used_at": text}, "id", "name", "created_at", "last_used_at")
 	schemas["AccountSecurity"].(map[string]any)["properties"].(map[string]any)["passkeys"] = arraySchema(schemaRef("PasskeyMetadata"))
@@ -141,16 +141,15 @@ func securityAPISchemas(schemas map[string]any) []apiOperation {
 	schemas["PasskeyRegistration"] = objectSchema(map[string]any{"proof": secret, "name": text, "credential": map[string]any{"type": "object", "additionalProperties": true}}, "proof", "name", "credential")
 	schemas["PasskeyPurpose"] = objectSchema(map[string]any{"purpose": text}, "purpose")
 	schemas["PasskeyName"] = objectSchema(map[string]any{"name": text}, "name")
-	schemas["SignedOut"] = objectSchema(map[string]any{"signed_out": map[string]any{"const": true}}, "signed_out")
 	return []apiOperation{
 		{"/auth/passkey/begin", "post", "EmptyRequest", "PasskeyOptions", "200", "", ""}, {"/auth/passkey/finish", "post", "PasskeyResponse", "Auth", "200", "", ""},
-		{"/auth/passkeys/register/begin", "post", "ProofRequest", "PasskeyOptions", "200", "viewer", "session-only"}, {"/auth/passkeys/register/finish", "post", "PasskeyRegistration", "SignedOut", "200", "viewer", "session-only"},
+		{"/auth/passkeys/register/begin", "post", "ProofRequest", "PasskeyOptions", "200", "viewer", "session-only"}, {"/auth/passkeys/register/finish", "post", "PasskeyRegistration", "Auth", "200", "viewer", "session-only"},
 		{"/auth/passkeys/reauth/begin", "post", "PasskeyPurpose", "PasskeyOptions", "200", "viewer", "session-only"}, {"/auth/passkeys/reauth/finish", "post", "PasskeyResponse", "ReauthProof", "200", "viewer", "session-only"},
-		{"/auth/passkeys/{id}", "put", "PasskeyName", "PasskeyName", "200", "viewer", "session-only"}, {"/auth/passkeys/{id}", "delete", "ProofRequest", "", "204", "viewer", "session-only"},
+		{"/auth/passkeys/{id}", "put", "PasskeyName", "PasskeyName", "200", "viewer", "session-only"}, {"/auth/passkeys/{id}", "delete", "ProofRequest", "Auth", "200", "viewer", "session-only"},
 		{"/auth/options", "get", "", "AuthOptions", "200", "", ""}, {"/auth/mfa", "post", "MFACode", "Auth", "200", "", ""}, {"/auth/login/cancel", "post", "", "", "204", "", ""},
 		{"/auth/security", "get", "", "AccountSecurity", "200", "viewer", "session-only"}, {"/auth/reauth", "post", "ReauthRequest", "ReauthProof", "200", "viewer", "session-only"},
 		{"/auth/totp/setup", "post", "ProofRequest", "TOTPSetup", "200", "viewer", "session-only"}, {"/auth/totp/setup", "delete", "", "", "204", "viewer", "session-only"},
-		{"/auth/totp/confirm", "post", "TOTPConfirm", "RecoveryCodes", "200", "viewer", "session-only"}, {"/auth/totp", "delete", "ProofRequest", "", "204", "viewer", "session-only"},
+		{"/auth/totp/confirm", "post", "TOTPConfirm", "RecoveryCodes", "200", "viewer", "session-only"}, {"/auth/totp", "delete", "ProofRequest", "Auth", "200", "viewer", "session-only"},
 		{"/auth/recovery-codes", "post", "ProofRequest", "RecoveryCodes", "200", "viewer", "session-only"},
 	}
 }

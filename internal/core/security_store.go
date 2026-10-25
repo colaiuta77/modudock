@@ -78,6 +78,12 @@ func revokeWebCredentials(tx *sql.Tx, userID string) error {
 	}
 	return nil
 }
+func (s *Server) rotateSecuritySession(ctx context.Context, tx *sql.Tx, userID string, version int64) (authSession, error) {
+	if e := revokeWebCredentials(tx, userID); e != nil {
+		return authSession{}, e
+	}
+	return s.issueSession(ctx, tx, userID, version+1)
+}
 func (s *Server) putAuthChallenge(ctx context.Context, c authChallenge) (string, error) {
 	if !c.ExpiresAt.After(time.Now()) || c.Purpose == "" || !json.Valid(c.Payload) {
 		return "", errAuthState

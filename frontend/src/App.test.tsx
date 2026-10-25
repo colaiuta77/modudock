@@ -78,7 +78,7 @@ function serve(
     return Response.json({ items: [], total: 0 });
   });
 }
-it("보안 변경으로 로그아웃해도 새 복구 코드가 저장 확인까지 남는다", async () => {
+it("보안 변경 후 설정 화면에서 복구 코드를 저장하고 로그인을 유지한다", async () => {
   serve("admin", (path) =>
     path.endsWith("/auth/security")
       ? Response.json({
@@ -99,7 +99,8 @@ it("보안 변경으로 로그아웃해도 새 복구 코드가 저장 확인까
           : path.endsWith("/auth/totp/confirm")
             ? Response.json({
                 recovery_codes: ["ONE-TIME-RECOVERY"],
-                signed_out: true,
+                csrf_token: "rotated-csrf",
+                user: admin,
               })
             : undefined,
   );
@@ -118,15 +119,15 @@ it("보안 변경으로 로그아웃해도 새 복구 코드가 저장 확인까
   await userEvent.type(await screen.findByLabelText("인증 코드"), "012345");
   await userEvent.click(screen.getByRole("button", { name: "인증 및 활성화" }));
   expect(await screen.findByText("ONE-TIME-RECOVERY")).toBeTruthy();
-  expect(screen.queryByRole("navigation")).toBeNull();
+  expect(screen.getByRole("navigation", { name: "주 내비게이션" })).toBeTruthy();
   expect(localStorage.getItem("recovery_codes")).toBeNull();
   await userEvent.click(
     screen.getByLabelText("복구 코드를 안전한 곳에 저장했습니다."),
   );
   await userEvent.click(
-    screen.getByRole("button", { name: "저장 확인 후 로그인" }),
+    screen.getByRole("button", { name: "저장 확인 후 닫기" }),
   );
-  expect(await screen.findByRole("button", { name: "로그인" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "계정 보안" })).toBeTruthy();
   expect(screen.queryByText("ONE-TIME-RECOVERY")).toBeNull();
 });
 it("사이드바 접기 상태를 재접속에도 보존한다", async () => {

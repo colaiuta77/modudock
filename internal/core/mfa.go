@@ -513,8 +513,9 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request, p principal
 		return
 	}
 	codes, e := newRecoveryCodes(tx, p.User.ID)
+	var session authSession
 	if e == nil {
-		e = revokeWebCredentials(tx, p.User.ID)
+		session, e = s.rotateSecuritySession(r.Context(), tx, p.User.ID, version)
 	}
 	if e != nil {
 		internalError(w)
@@ -525,9 +526,9 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request, p principal
 		return
 	}
 	s.authAttemptSucceeded(r, "totp-confirm", p.User.ID)
-	s.setCookie(w, "", -1)
+	s.setCookie(w, session.RawCookie, 86400)
 	s.audit(r, "totp_enabled", p.User.ID)
-	writeJSON(w, 200, map[string]any{"recovery_codes": codes, "signed_out": true})
+	writeJSON(w, 200, map[string]any{"recovery_codes": codes, "user": session.User, "csrf_token": session.CSRF})
 }
 func (s *Server) disableTOTP(w http.ResponseWriter, r *http.Request, p principal) {
 	s.mutateRecovery(w, r, p, false)
@@ -577,8 +578,9 @@ func (s *Server) mutateRecovery(w http.ResponseWriter, r *http.Request, p princi
 			_, e = tx.Exec(`DELETE FROM recovery_codes WHERE user_id=?`, p.User.ID)
 		}
 	}
+	var session authSession
 	if e == nil {
-		e = revokeWebCredentials(tx, p.User.ID)
+		session, e = s.rotateSecuritySession(r.Context(), tx, p.User.ID, account.AuthVersion)
 	}
 	if e != nil {
 		internalError(w)
@@ -588,11 +590,11 @@ func (s *Server) mutateRecovery(w http.ResponseWriter, r *http.Request, p princi
 		internalError(w)
 		return
 	}
-	s.setCookie(w, "", -1)
+	s.setCookie(w, session.RawCookie, 86400)
 	s.audit(r, purpose, p.User.ID)
 	if regenerate {
-		writeJSON(w, 200, map[string]any{"recovery_codes": codes, "signed_out": true})
+		writeJSON(w, 200, map[string]any{"recovery_codes": codes, "user": session.User, "csrf_token": session.CSRF})
 	} else {
-		w.WriteHeader(204)
+		writeJSON(w, 200, session)
 	}
 }

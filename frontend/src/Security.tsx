@@ -1,12 +1,18 @@
-// 계정별 TOTP와 Passkey 관리 및 로그아웃 후 복구 코드 일회 표시를 제공한다.
+// 계정별 TOTP와 Passkey 관리 및 설정 화면 내 복구 코드 일회 표시를 제공한다.
 import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Copy, Download, Fingerprint, ShieldCheck, Trash2 } from "lucide-react";
-import { APIError, body, id, request as apiRequest } from "./api";
+import {
+  APIError,
+  changeSecurity,
+  body,
+  id,
+  request as apiRequest,
+  type AuthResponse,
+} from "./api";
 import { ErrorBox, Field, Panel, useLoad, type PageProps } from "./common";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Badge } from "./components/ui/badge";
-import { Card } from "./components/ui/card";
 import { PasswordPage } from "./Settings";
 import {
   createPasskey,
@@ -29,11 +35,10 @@ type SecurityStatus = {
 };
 type Setup = { secret: string; qr_png: string; expires_at: string };
 type Proof = { proof: string; expires_at: string };
-type RecoveryResponse = { recovery_codes: string[]; signed_out: true };
+type SecurityResponse = AuthResponse & { recovery_codes?: string[] };
 export function SecurityPage(
   props: PageProps & {
     onSignedOut: () => void;
-    onRecoveryCodes: (codes: string[]) => void;
   },
 ) {
   const lifecycle = useRef(new AbortController());
@@ -44,6 +49,12 @@ export function SecurityPage(
   }, [props.user.id]);
   function request<T>(path: string, options: RequestInit = {}) {
     return apiRequest<T>(path, {
+      ...options,
+      signal: lifecycle.current.signal,
+    });
+  }
+  function change(path: string, options: RequestInit) {
+    return changeSecurity<SecurityResponse>(path, {
       ...options,
       signal: lifecycle.current.signal,
     });
@@ -59,17 +70,22 @@ export function SecurityPage(
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const status = security.data;
   const browserReason = passkeyBrowserSupport();
   const passkeyReason = browserReason || status?.passkey_reason || "";
-  function done(codes?: string[]) {
+  function done(result: SecurityResponse) {
     setSetup(undefined);
     setProof(undefined);
     setPassword("");
     setFactor("");
     setCode("");
-    if (codes) props.onRecoveryCodes(codes);
-    props.onSignedOut();
+    setName("");
+    setRecoveryCodes(result.recovery_codes || []);
+    security.reload();
+    props.notify(
+      "보안 설정을 변경했습니다. 현재 브라우저를 제외한 기존 세션은 종료되었습니다.",
+    );
   }
   async function run(operation: () => Promise<void>) {
     const signal = lifecycle.current.signal;
@@ -95,11 +111,11 @@ export function SecurityPage(
   }
   async function confirm(value: Proof) {
     try {
-      const result = await request<RecoveryResponse>("/auth/totp/confirm", {
+      const result = await change("/auth/totp/confirm", {
         method: "POST",
         body: body({ proof: value.proof, code }),
       });
-      done(result.recovery_codes);
+      done(result);
     } catch (e) {
       if (e instanceof APIError && e.code === "reauth_required") {
         ask("confirm");
@@ -128,17 +144,17 @@ export function SecurityPage(
     } else if (next === "confirm") {
       await confirm(value);
     } else if (next === "totp-disable") {
-      await request("/auth/totp", {
+      const result = await change("/auth/totp", {
         method: "DELETE",
         body: body({ proof: value.proof }),
       });
-      done();
+      done(result);
     } else if (next === "recovery-regenerate") {
-      const result = await request<RecoveryResponse>("/auth/recovery-codes", {
+      const result = await change("/auth/recovery-codes", {
         method: "POST",
         body: body({ proof: value.proof }),
       });
-      done(result.recovery_codes);
+      done(result);
     } else if (next === "passkey-register") {
       const options = await request<unknown>("/auth/passkeys/register/begin", {
         method: "POST",
@@ -147,17 +163,17 @@ export function SecurityPage(
       const signal = lifecycle.current.signal;
       const credential = await createPasskey(options, signal);
       signal.throwIfAborted();
-      await request("/auth/passkeys/register/finish", {
+      const result = await change("/auth/passkeys/register/finish", {
         method: "POST",
         body: body({ proof: value.proof, name, credential }),
       });
-      done();
+      done(result);
     } else if (next.startsWith("passkey-delete:")) {
-      await request(
+      const result = await change(
         `/auth/passkeys/${id(next.slice("passkey-delete:".length))}`,
         { method: "DELETE", body: body({ proof: value.proof }) },
       );
-      done();
+      done(result);
     }
   }
   async function passwordReauth(e: FormEvent) {
@@ -195,8 +211,8 @@ export function SecurityPage(
     <div className="stack security-page">
       <p className="muted">
         내 계정의 로그인 수단을 관리합니다. TOTP 변경·복구 코드 재발급·Passkey
-        등록/삭제 시 모든 웹 세션이 종료됩니다. API 토큰은 유지되며 별도 폐기가
-        필요합니다.
+        등록/삭제 시 현재 브라우저의 로그인은 유지하고 다른 웹 세션은
+        종료합니다. API 토큰은 유지되며 별도 폐기가 필요합니다.
       </p>
       <ErrorBox message={security.error || error} />
       {intent && (
@@ -392,6 +408,13 @@ export function SecurityPage(
         description="인증 앱을 사용할 수 없을 때 비밀번호와 함께 사용하는 일회용 코드입니다."
       >
         <p>복구 코드 {status?.recovery_codes_remaining || 0}개 남음</p>
+        {recoveryCodes.length > 0 && (
+          <RecoveryCodes
+            key={recoveryCodes.join(":")}
+            codes={recoveryCodes}
+            onClose={() => setRecoveryCodes([])}
+          />
+        )}
         <p className="muted small">
           코드는 발급 직후 한 번만 표시됩니다. 재생성하면 기존 코드는 모두
           무효화됩니다.
@@ -401,7 +424,7 @@ export function SecurityPage(
           onClick={() => {
             if (
               window.confirm(
-                "기존 복구 코드가 모두 무효화되고 모든 기기에서 로그아웃됩니다. 새로 발급할까요?",
+                "기존 복구 코드가 모두 무효화되고 다른 기기의 세션이 종료됩니다. 새로 발급할까요?",
               )
             )
               ask("recovery-regenerate");
@@ -496,7 +519,7 @@ export function SecurityPage(
                   onClick={() => {
                     if (
                       window.confirm(
-                        "이 Passkey를 삭제하고 모든 기기에서 로그아웃할까요?",
+                        "이 Passkey를 삭제하고 다른 기기의 세션을 종료할까요?",
                       )
                     )
                       ask(`passkey-delete:${key.id}`);
@@ -548,46 +571,42 @@ export function RecoveryCodes({
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
   return (
-    <main className="recovery-page">
-      <Card className="panel">
-        <ShieldCheck size={32} />
-        <h1>복구 코드를 안전하게 보관하세요.</h1>
-        <p>
-          보안 설정이 변경되어 모든 기기에서 로그아웃했습니다. 이 코드는 다시
-          조회할 수 없습니다.
-        </p>
-        <p className="muted">
-          비밀번호 관리자 등 안전한 곳에 저장하세요. 화면을 닫거나 새로고침하면
-          사라집니다.
-        </p>
-        <div className="recovery-grid">
-          {codes.map((code) => (
-            <code key={code}>{code}</code>
-          ))}
-        </div>
-        <ErrorBox message={error} />
-        <div className="security-actions">
-          <Button variant="outline" onClick={() => void copy()}>
-            <Copy />
-            전체 복사
-          </Button>
-          <Button variant="outline" onClick={download}>
-            <Download />
-            TXT 다운로드
-          </Button>
-        </div>
-        <label className="security-check">
-          <input
-            type="checkbox"
-            checked={saved}
-            onChange={(e) => setSaved(e.target.checked)}
-          />
-          복구 코드를 안전한 곳에 저장했습니다.
-        </label>
-        <Button disabled={!saved} onClick={onClose}>
-          저장 확인 후 로그인
+    <section className="stack" aria-label="새 복구 코드">
+      <p>
+        이 코드는 한 번만 표시됩니다. 지금 저장하세요. 재생성하면 기존 코드는
+        무효화됩니다.
+      </p>
+      <p className="muted">
+        비밀번호 관리자 등 안전한 곳에 저장하세요. 화면을 닫거나 새로고침하면
+        사라집니다.
+      </p>
+      <div className="recovery-grid">
+        {codes.map((code) => (
+          <code key={code}>{code}</code>
+        ))}
+      </div>
+      <ErrorBox message={error} />
+      <div className="security-actions">
+        <Button variant="outline" onClick={() => void copy()}>
+          <Copy />
+          전체 복사
         </Button>
-      </Card>
-    </main>
+        <Button variant="outline" onClick={download}>
+          <Download />
+          TXT 다운로드
+        </Button>
+      </div>
+      <label className="security-check">
+        <input
+          type="checkbox"
+          checked={saved}
+          onChange={(e) => setSaved(e.target.checked)}
+        />
+        복구 코드를 안전한 곳에 저장했습니다.
+      </label>
+      <Button disabled={!saved} onClick={onClose}>
+        저장 확인 후 닫기
+      </Button>
+    </section>
   );
 }

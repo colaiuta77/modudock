@@ -11,6 +11,7 @@ page.setDefaultTimeout(10000);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 let loggedIn = true;
+let totpEnabled = false;
 const user = { id: 'ui-test', username: 'precision-admin', role: 'admin', is_active: true, created_at: '2026-10-25T00:00:00Z' };
 const schema = { type: 'object', properties: { title: { type: 'string', title: '제목', default: '자동화 테스트' }, enabled: { type: 'boolean', title: '사용', default: true }, mode: { type: 'string', title: '모드', enum: ['daily','weekly'] }, details: { type: 'object', title: '세부 정보' } } };
 const plugin = { id: 'demo', name: '데모 플러그인', version: '1.0.0', state: 'active', repository_url: 'https://example.com/demo.git', active_release_id: 'release', manifest: { id: 'demo', name: '데모 플러그인', version: '1.0.0', data_schema_version: 1, tasks: [{ id: 'sync', title: '동기화 실행', input_schema: schema }], settings_schema: schema, menus: [{ id: 'home', title: '데모 작업', icon: 'puzzle', resource: 'records' }], resources: [{ id: 'records', methods: ['GET'] }] } };
@@ -25,10 +26,10 @@ await page.route('**/api/v1/**', async route => {
   else if (path === '/auth/login') { data = { mfa_required: true, expires_at: '2099-01-01T00:00:00Z' }; status = 202; }
   else if (path === '/auth/mfa') { loggedIn = true; data = { user, csrf_token: 'fixture' }; }
   else if (path === '/auth/logout') { loggedIn = false; data = {}; }
-  else if (path === '/auth/security') data = { totp_enabled: false, recovery_codes_remaining: 0, passkey_available: false, passkey_reason: '로컬 UI 테스트', passkeys: [{ id: 'key', name: '개인 노트북', created_at: '2026-10-25', last_used_at: '2026-10-25' }] };
+  else if (path === '/auth/security') data = { totp_enabled: totpEnabled, recovery_codes_remaining: totpEnabled ? 10 : 0, passkey_available: false, passkey_reason: '로컬 UI 테스트', passkeys: [{ id: 'key', name: '개인 노트북', created_at: '2026-10-25', last_used_at: '2026-10-25' }] };
   else if (path === '/auth/reauth') data = { proof: 'fixture', expires_at: '2099-01-01T00:00:00Z' };
   else if (path === '/auth/totp/setup') data = { secret: 'JBSWY3DPEHPK3PXP', qr_png: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aqqsAAAAASUVORK5CYII=', expires_at: '2099-01-01T00:00:00Z' };
-  else if (path === '/auth/totp/confirm') { loggedIn = false; data = { recovery_codes: Array.from({length:10}, (_, i) => `ABCDE-FGHIJ-KLMNO-PQRST-UVWX${i}`), signed_out: true }; }
+  else if (path === '/auth/totp/confirm') { totpEnabled = true; data = { user, csrf_token: 'rotated-fixture', recovery_codes: Array.from({length:10}, (_, i) => `ABCDE-FGHIJ-KLMNO-PQRST-UVWX${i}`) }; }
   else if (path === '/status') data = { version: 'precision-preview', started_at: '2026-10-25T00:00:00Z', plugins_active: 1, runs_queued: 2, runs_running: 1, runs_succeeded: 128, runs_failed: 0 };
   else if (path === '/menus') data = items([menu]);
   else if (path === '/users') data = items([user]);
@@ -85,9 +86,18 @@ try {
   await page.getByRole('button',{name:'인증 및 활성화'}).click();
   await page.getByText('ABCDE-FGHIJ-KLMNO-PQRST-UVWX0').waitFor();
   await capture('mobile-recovery');
-  assert.equal(await page.getByRole('button',{name:'저장 확인 후 로그인'}).isDisabled(),true);
+  await page.getByRole('heading',{name:'계정 보안',exact:true,level:1}).waitFor();
+  await page.getByText('복구 코드 10개 남음').waitFor();
+  await page.setViewportSize({width:1440,height:1000});
+  await capture('desktop-recovery-inline');
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.getByRole('button',{name:'저장 확인 후 닫기'}).isDisabled(),true);
   await page.getByLabel('복구 코드를 안전한 곳에 저장했습니다.').check();
-  await page.getByRole('button',{name:'저장 확인 후 로그인'}).click();
+  await page.getByRole('button',{name:'저장 확인 후 닫기'}).click();
+  assert.equal(await page.getByText('ABCDE-FGHIJ-KLMNO-PQRST-UVWX0').count(),0);
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'로그아웃',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
   await page.getByLabel('사용자 이름').fill('precision-admin');
   await page.getByLabel('비밀번호',{exact:true}).fill('fixture-password');
   await capture('mobile-login');

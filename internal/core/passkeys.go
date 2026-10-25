@@ -321,7 +321,8 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 		apiError(w, 409, "conflict", "Passkey is already registered")
 		return
 	}
-	if e = revokeWebCredentials(tx, p.User.ID); e != nil {
+	session, e := s.rotateSecuritySession(r.Context(), tx, p.User.ID, state.AuthVersion)
+	if e != nil {
 		internalError(w)
 		return
 	}
@@ -329,10 +330,10 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 		internalError(w)
 		return
 	}
-	s.setCookie(w, "", -1)
+	s.setCookie(w, session.RawCookie, 86400)
 	s.setPasskeyCookie(w, "", -1)
 	s.audit(r, "passkey_registered", p.User.ID)
-	writeJSON(w, 200, map[string]any{"signed_out": true})
+	writeJSON(w, 200, session)
 }
 func (s *Server) beginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuthOrigin(w, r) {
@@ -597,7 +598,8 @@ func (s *Server) deletePasskey(w http.ResponseWriter, r *http.Request, p princip
 		apiError(w, 404, "not_found", "Passkey not found")
 		return
 	}
-	if e = revokeWebCredentials(tx, p.User.ID); e != nil {
+	session, e := s.rotateSecuritySession(r.Context(), tx, p.User.ID, account.AuthVersion)
+	if e != nil {
 		internalError(w)
 		return
 	}
@@ -605,7 +607,7 @@ func (s *Server) deletePasskey(w http.ResponseWriter, r *http.Request, p princip
 		internalError(w)
 		return
 	}
-	s.setCookie(w, "", -1)
+	s.setCookie(w, session.RawCookie, 86400)
 	s.audit(r, "passkey_deleted", p.User.ID)
-	w.WriteHeader(204)
+	writeJSON(w, 200, session)
 }

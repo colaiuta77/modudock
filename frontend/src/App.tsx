@@ -63,7 +63,7 @@ import {
   SheetTrigger,
 } from "./components/ui/sheet";
 import { UsersPage, TokensPage, MenusPage } from "./Settings";
-import { SecurityPage, RecoveryCodes } from "./Security";
+import { SecurityPage } from "./Security";
 import { passkeyBrowserSupport, PasskeyCancelled } from "./webauthn";
 import { RunsPage, SchedulesPage, LogsPage } from "./Operations";
 import { PluginsPage, PluginWorkspace } from "./Plugins";
@@ -284,7 +284,6 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 }
 
 export default function App() {
-  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true),
     [view, setView] = useState("overview"),
@@ -349,13 +348,6 @@ export default function App() {
     };
   }, [user, changed]);
   const action = useAction(notify);
-  if (recoveryCodes.length)
-    return (
-      <RecoveryCodes
-        codes={recoveryCodes}
-        onClose={() => setRecoveryCodes([])}
-      />
-    );
   if (checking)
     return (
       <main className="loading-page" aria-busy="true">
@@ -398,7 +390,6 @@ export default function App() {
         setUser(null);
         setView("overview");
       }}
-      onRecoveryCodes={setRecoveryCodes}
       onLogout={() =>
         void action.perform(async () => {
           await signOut();
@@ -425,7 +416,6 @@ function Console({
   onSettings,
   onDismiss,
   onSignedOut,
-  onRecoveryCodes,
   onLogout,
 }: {
   user: User;
@@ -443,7 +433,6 @@ function Console({
   onSettings: () => void;
   onDismiss: () => void;
   onSignedOut: () => void;
-  onRecoveryCodes: (codes: string[]) => void;
   onLogout: () => void;
 }) {
   const status = useLoad<Status>("/status", revision),
@@ -721,7 +710,6 @@ function Console({
               key={user.id}
               {...props}
               onSignedOut={onSignedOut}
-              onRecoveryCodes={onRecoveryCodes}
             />
           )}{" "}
           {view.startsWith("plugin:") && (

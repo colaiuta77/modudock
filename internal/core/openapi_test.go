@@ -48,6 +48,24 @@ func TestOpenAPIMFAContract(t *testing.T) {
 		t.Error("missing MFA challenge response")
 	}
 }
+func TestOpenAPISecurityRotationContract(t *testing.T) {
+	c := newClient(t)
+	doc := c.s.apiDocument()
+	paths := doc["paths"].(map[string]any)
+	for _, tc := range []struct{ path, method string }{
+		{"/auth/totp", "delete"}, {"/auth/passkeys/{id}", "delete"},
+	} {
+		responses := paths[tc.path].(map[string]any)[tc.method].(map[string]any)["responses"].(map[string]any)
+		if responses["200"] == nil {
+			t.Errorf("%s must return renewed session JSON", tc.path)
+		}
+	}
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	fields := schemas["RecoveryCodes"].(map[string]any)["properties"].(map[string]any)
+	if fields["csrf_token"] == nil || fields["user"] == nil {
+		t.Error("recovery response lacks renewed session")
+	}
+}
 func TestOpenAPIPasskeyContract(t *testing.T) {
 	c := newClient(t)
 	paths := c.s.apiDocument()["paths"].(map[string]any)

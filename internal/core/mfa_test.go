@@ -105,7 +105,7 @@ func TestTOTPEnrollmentRequiresConfirmation(t *testing.T) {
 	status(t, c.request("POST", "/api/v1/auth/totp/confirm", fmt.Sprintf(`{"proof":%q,"code":"invalid"}`, proof)), 401)
 	secret := setup["secret"].(string)
 	body := authJSON(t, c.request("POST", "/api/v1/auth/totp/confirm", fmt.Sprintf(`{"proof":%q,"code":%q}`, proof, otpCode(t, secret, 0))), 200)
-	if body["signed_out"] != true || len(body["recovery_codes"].([]any)) != 10 {
+	if body["csrf_token"] == nil || len(body["recovery_codes"].([]any)) != 10 {
 		t.Fatal(body)
 	}
 	status(t, c.request("GET", "/api/v1/auth/me", ""), 401)

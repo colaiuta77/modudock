@@ -1,8 +1,117 @@
 // 실제 API 클라이언트의 CSRF 전달과 오류 응답 처리를 검증한다.
 import { afterEach, expect, it, vi } from "vitest";
-import { request, signIn, signOut, completeMFA } from "./api";
+import {
+  request,
+  signIn,
+  signOut,
+  completeMFA,
+  acceptSession,
+  changeSecurity,
+} from "./api";
+
+it("세션 교체 전에 보낸 요청의 늦은 401은 새 세션을 종료하지 않는다", async () => {
+  const expired = vi.fn();
+  window.addEventListener("modudock:unauthorized", expired);
+  let finish!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = request("/status").catch((e) => e);
+  acceptSession({
+    user: {
+      id: "u",
+      username: "admin",
+      role: "admin",
+      is_active: true,
+      created_at: "",
+    },
+    csrf_token: "rotated-csrf",
+  });
+  finish(
+    Response.json(
+      { error: { code: "unauthorized", message: "expired" } },
+      { status: 401 },
+    ),
+  );
+  await pending;
+  expect(expired).not.toHaveBeenCalled();
+  let sentToken: string | null = null;
+  vi.stubGlobal("fetch", async (_path: string, init?: RequestInit) => {
+    sentToken = new Headers(init?.headers).get("X-CSRF-Token");
+    return new Response(null, { status: 204 });
+  });
+  await request("/probe", { method: "POST" });
+  expect(sentToken).toBe("rotated-csrf");
+  window.removeEventListener("modudock:unauthorized", expired);
+});
 
 afterEach(() => vi.unstubAllGlobals());
+
+it.each([200, 500, 401])(
+  "보안 변경 응답(%s)보다 먼저 온 배경 401의 처리를 변경 완료까지 기다린다",
+  async (status) => {
+    let finishRotation!: (response: Response) => void;
+    let finishRefresh!: (response: Response) => void;
+    const expired = vi.fn();
+    window.addEventListener("modudock:unauthorized", expired);
+    acceptSession({
+      user: {
+        id: "u",
+        username: "admin",
+        role: "admin",
+        is_active: true,
+        created_at: "",
+      },
+      csrf_token: "before",
+    });
+    vi.stubGlobal(
+      "fetch",
+      (path: string) =>
+        new Promise<Response>((resolve) => {
+          if (path.endsWith("/confirm")) finishRotation = resolve;
+          else finishRefresh = resolve;
+        }),
+    );
+    const rotation = changeSecurity("/auth/totp/confirm", {
+      method: "POST",
+    }).catch((e) => e);
+    const refresh = request("/status").catch((e) => e);
+    finishRefresh(
+      Response.json(
+        { error: { code: "unauthorized", message: "old session" } },
+        { status: 401 },
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const earlyEvents = expired.mock.calls.length;
+    finishRotation(
+      status === 200
+        ? Response.json({
+            user: {
+              id: "u",
+              username: "admin",
+              role: "admin",
+              is_active: true,
+              created_at: "",
+            },
+            csrf_token: "after",
+          })
+        : Response.json(
+            { error: { code: "unauthorized", message: "rotation failed" } },
+            { status },
+          ),
+    );
+    await Promise.all([rotation, refresh]);
+    window.removeEventListener("modudock:unauthorized", expired);
+    expect(earlyEvents).toBe(0);
+    if (status === 200) expect(expired).not.toHaveBeenCalled();
+    else expect(expired).toHaveBeenCalled();
+  },
+);
 
 it("취소한 요청의 늦은 401은 새 로그인 상태를 만료시키지 않는다", async () => {
   const expired = vi.fn();
