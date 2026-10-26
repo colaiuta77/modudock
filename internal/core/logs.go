@@ -36,7 +36,7 @@ type logStore struct {
 	logger *slog.Logger
 }
 
-func openLogs(dataDir string) (*logStore, error) {
+func openLogs(dataDir string, operational io.Writer) (*logStore, error) {
 	dir := filepath.Join(dataDir, "logs")
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
@@ -45,7 +45,11 @@ func openLogs(dataDir string) (*logStore, error) {
 	if e := l.open(); e != nil {
 		return nil, e
 	}
-	l.logger = slog.New(slog.NewJSONHandler(io.MultiWriter(l, os.Stdout), &slog.HandlerOptions{ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+	writers := []io.Writer{l, os.Stdout}
+	if operational != nil {
+		writers = append(writers, operational)
+	}
+	l.logger = slog.New(slog.NewJSONHandler(io.MultiWriter(writers...), &slog.HandlerOptions{ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 		if a.Key == slog.TimeKey {
 			a.Key = "timestamp"
 			a.Value = slog.TimeValue(a.Value.Time().UTC())

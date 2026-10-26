@@ -44,16 +44,26 @@ func run(args []string, in io.Reader, out io.Writer) error {
 	case "serve":
 		f := flag.NewFlagSet("serve", flag.ContinueOnError)
 		f.SetOutput(out)
-		dir := f.String("data-dir", "data", "Local data directory")
-		listen := f.String("listen", "127.0.0.1:7438", "HTTP listen address")
-		publicURL := f.String("public-url", "", "External HTTP origin")
+		config, path := configFlags(f)
 		if e := f.Parse(args[1:]); e != nil {
 			return e
 		}
 		if f.NArg() != 0 {
 			return errors.New("unexpected serve arguments")
 		}
-		s, e := core.Open(*dir, core.Options{Version: version, PublicURL: *publicURL, WebFS: web.FS()})
+		if e := resolveConfig(f, config, *path); e != nil {
+			return e
+		}
+		var logOutput io.Writer
+		if config.LogFile != "" {
+			file, e := os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+			if e != nil {
+				return e
+			}
+			defer file.Close()
+			logOutput = file
+		}
+		s, e := core.Open(config.DataDir, core.Options{Version: version, PublicURL: config.PublicURL, LogOutput: logOutput, WebFS: web.FS()})
 		if e != nil {
 			return e
 		}
@@ -61,7 +71,7 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		if e = s.StartBackground(); e != nil {
 			return e
 		}
-		server := &http.Server{Addr: *listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+		server := &http.Server{Addr: config.Listen, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		server.BaseContext = func(net.Listener) context.Context { return ctx }
@@ -140,15 +150,56 @@ func run(args []string, in io.Reader, out io.Writer) error {
 		}
 		fmt.Fprintln(out, "Administrator created.")
 		return nil
+	case "config":
+		if len(args) < 2 || args[1] != "check" {
+			return errors.New("usage: modudock config check --config PATH [--field data_dir|listen|public_url|log_file]")
+		}
+		f := flag.NewFlagSet("config check", flag.ContinueOnError)
+		f.SetOutput(out)
+		config, path := configFlags(f)
+		field := f.String("field", "", "Print one effective configuration field")
+		if e := f.Parse(args[2:]); e != nil {
+			return e
+		}
+		if f.NArg() != 0 {
+			return errors.New("unexpected config arguments")
+		}
+		if e := resolveConfig(f, config, *path); e != nil {
+			return e
+		}
+		values := map[string]string{"data_dir": config.DataDir, "listen": config.Listen, "public_url": config.PublicURL, "log_file": config.LogFile}
+		if *field == "" {
+			fmt.Fprintln(out, "Configuration valid.")
+			return nil
+		}
+		value, ok := values[*field]
+		if !ok {
+			return errors.New("unknown config field")
+		}
+		fmt.Fprintln(out, value)
+		return nil
 	case "healthcheck":
 		f := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
 		f.SetOutput(out)
 		url := f.String("url", "http://127.0.0.1:7438", "Server origin")
+		config, path := configFlags(f)
 		if e := f.Parse(args[1:]); e != nil {
 			return e
 		}
 		if f.NArg() != 0 {
 			return errors.New("unexpected healthcheck arguments")
+		}
+		if e := resolveConfig(f, config, *path); e != nil {
+			return e
+		}
+		explicitURL := false
+		f.Visit(func(v *flag.Flag) {
+			if v.Name == "url" {
+				explicitURL = true
+			}
+		})
+		if !explicitURL {
+			*url = config.healthURL()
 		}
 		client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
 		response, e := client.Get(strings.TrimRight(*url, "/") + "/healthz")

@@ -2,12 +2,30 @@
 package core
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestOperationalLogReceivesCoreEvents(t *testing.T) {
+	var operational bytes.Buffer
+	s, err := Open(t.TempDir(), Options{LogOutput: &operational})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.log(LogEntry{Message: "operational event", Component: "installer"})
+	entries, err := s.logs.read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Message != "operational event" || !strings.Contains(operational.String(), `"message":"operational event"`) {
+		t.Fatalf("log not delivered: %q %+v", operational.String(), entries)
+	}
+}
 
 func TestLogSeverityAndUTC(t *testing.T) {
 	c := newClient(t)
@@ -29,7 +47,7 @@ func TestLogSeverityAndUTC(t *testing.T) {
 	}
 }
 func TestLogRotationBounded(t *testing.T) {
-	l, e := openLogs(t.TempDir())
+	l, e := openLogs(t.TempDir(), nil)
 	if e != nil {
 		t.Fatal(e)
 	}

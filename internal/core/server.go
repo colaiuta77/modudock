@@ -22,6 +22,7 @@ import (
 type Options struct {
 	Version, PublicURL string
 	WebFS              fs.FS
+	LogOutput          io.Writer
 }
 type Server struct {
 	db                *sql.DB
@@ -78,7 +79,7 @@ func Open(dataDir string, options Options) (*Server, error) {
 		s.Close()
 		return nil, e
 	}
-	logs, e := openLogs(s.dataDir)
+	logs, e := openLogs(s.dataDir, options.LogOutput)
 	if e != nil {
 		s.Close()
 		return nil, e
