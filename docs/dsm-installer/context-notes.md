@@ -8,3 +8,6 @@
 - 공통 설치 잠금의 부모 심볼릭 링크 수용을 RED로 재현했다. /run/modudock-installer의 현재 root 소유 0700 전용 디렉터리로 옮기고 대상 타입·소유권·링크를 확인한다. 잠금 FD9는 비root 명령에 전달하지 않는다. Linux/DSM 전체 테스트가 GREEN이다.
 - NAS의 실제 사용자·서비스·방화벽은 변경하지 않았다. Oracle도 진단만 했으며 사용자에게 사설 IP 바인딩 drop-in을 안내했다.
 - 독립 리뷰에서 DSM 업데이트 테스트 누락과 su 검사 시점이 늦다는 지적을 받았다. 비활성/암호 변경 요구 계정에서 기존 서비스 중지로 이어지는 효과를 중요 문제로 재분류했다. 실패 su 테스트가 서비스 중지로 RED인 것을 확인하고 DSM에서는 중지 전 사전 검사로 이동했다. DSM 업데이트의 su 잠금·전체 백업·unit 보존도 실제 흐름 테스트에 추가했다.
+- 구현 커밋 7aaca02c9862c2cca91dbda8525e220467583e6b를 GitHub main에 정상 push했다. 인증 없는 raw install.sh HTTP200에서 DSM 분기가 반영됨을 확인했다.
+- GitHub Actions run 40271208154가 success로 완료됐다. Go race/vet, Linux·DSM Bash 설치 테스트, 프론트 테스트/npm audit, 내장 UI 빌드·실제 바이너리 smoke, govulncheck, Docker build가 모두 통과했다. main push이므로 새 binaries/publish 릴리스는 발행하지 않았고 v0.1.0 태그는 보존했다.
+- 최종 미검증은 실제 DSM 계정/PAM·systemd sandbox·볼륨 부팅 순서·NAS 재부팅과 Oracle override 적용이다. NAS와 Oracle의 서비스·계정·방화벽을 대신 변경하지 않았다. Oracle 명령 안내의 IP/도메인은 사용자가 제공하고 읽기 전용으로 검증한 값이다.
