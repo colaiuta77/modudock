@@ -180,6 +180,25 @@ DSM에서는 getent/useradd/runuser를 요구하지 않고 id·synogroup·su·sy
 
 신규 YAML 설치에는 설정 명령을 지원하는 v0.2.0 이상 릴리스가 필요합니다. 실제 서비스 기동·접근 권한·재부팅 자동 시작 및 DSM 대규모 업데이트 후 서비스 유지를 확인해야 합니다. 플러그인은 서비스 계정과 같은 권한으로 실행하는 신뢰 코드이며 악성 플러그인 격리는 제공하지 않습니다.
 
+## 네이티브 설치 제거
+
+같은 설치 스크립트에 `uninstall`을 전달합니다. Linux·Synology에서 실행파일과 systemd 서비스 등록만 제거하며 Docker 컨테이너에는 적용하지 않습니다. 제거 자체에는 릴리스 다운로드나 관리자 계정 입력이 필요하지 않습니다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh | sudo bash -s -- uninstall
+```
+
+서비스를 중지·비활성화하고 기본 unit과 실행파일만 삭제합니다. `config.yaml`, 데이터(`core.db`, `auth.key`, 플러그인 포함), 로그, 백업, logrotate 설정, 고지 파일과 서비스 계정은 남습니다. 기존 CLI 방식에서는 접속 설정이 unit에 있으므로 unit과 drop-in을 root 전용 `backups/uninstall-날짜.고유값/`에 먼저 백업하며, 수동 drop-in은 원래 위치에도 보존합니다. 백업·서비스 중지·비활성화가 실패하면 실행파일과 unit은 삭제하지 않습니다.
+
+DSM 사용자 지정 루트는 현재 로드된 서비스의 실행파일 경로에서 확인합니다. 서비스가 이미 없고 사용자 지정 경로의 남은 실행파일을 정리해야 한다면 루트를 명시합니다. 경로가 다르거나 지원하지 않는 서비스·심볼릭 링크 타깃이면 추측해서 삭제하지 않고 중단합니다.
+
+```sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh
+sudo env MODUDOCK_DSM_ROOT=/volume2/apps/modudock bash install.sh uninstall
+```
+
+이미 제거된 기본 설치에 다시 실행해도 설정·데이터는 삭제하지 않습니다. 남겨 둔 설정·drop-in·DB를 자동으로 덮어써 재설치하지 않으므로, 재설치할 때는 보존된 설정과 unit 백업을 확인해야 합니다. `uninstall`은 데이터 초기화나 완전 삭제 기능이 아닙니다.
+
 ## 백업과 복원
 
 MFA를 사용하면 `core.db`와 함께 `auth.key`가 반드시 필요합니다. 키 누락 시 MFA는 자동 해제되지 않습니다. [계정 보안·비상 복구 안내](account-security.md)를 확인하세요. 이번 DB v3를 구버전으로 되돌릴 때는 업데이트 전 전체 백업도 복원해야 합니다.

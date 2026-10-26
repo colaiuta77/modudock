@@ -410,8 +410,82 @@ cleanup() {
   fi
   return "$status"
 }
+uninstall_native() {
+  [[ $(uname -s) == Linux ]] || die 'Linux only.'
+  [[ $(id -u) == 0 ]] || die 'Run uninstall as root.'
+  local required state execution binary='' arguments property backup=''
+  for required in systemctl uname id awk grep install cp mktemp date flock rm; do
+    command -v "$required" >/dev/null || die "Required command is missing: $required"
+  done
+  check_systemd
+  prepare_install_lock
+  state=$(systemd_property LoadState modudock) || die 'Cannot inspect the service; nothing was removed.'
+  if [[ "$state" == loaded ]]; then
+    [[ $(systemd_property FragmentPath modudock) == "$UNIT_FILE" ]] || die 'Service is not the managed local unit; nothing was removed.'
+    execution=$(systemd_property ExecStart modudock) || die 'Cannot inspect the service executable.'
+    [[ "$execution" == '{ path='*' ; argv[]='* ]] || die 'Unsupported service command; nothing was removed.'
+    binary=${execution#*'path='}; binary=${binary%%' ;'*}
+    arguments=${execution#*'argv[]='}; arguments=${arguments%%' ;'*}
+    [[ ${execution#*'argv[]='} != *'argv[]='* && "$arguments" == "$binary serve "* ]] || die 'Unsupported service command; nothing was removed.'
+    for property in User Group; do
+      [[ $(systemd_property "$property" modudock) == modudock ]] || die 'Service identity is not modudock; nothing was removed.'
+    done
+  elif [[ "$state" != not-found || -e "$UNIT_FILE" ]]; then
+    die 'Service state is not recognized. Inspect systemctl cat modudock before removal.'
+  fi
+  PLATFORM=$(detect_platform)
+  if [[ "$PLATFORM" == dsm ]]; then
+    if [[ -n "$binary" ]]; then
+      safe_path "$binary" && [[ "$binary" =~ ^(/volume[1-9][0-9]*/.+)/bin/modudock$ ]] || die 'Unsupported DSM executable; nothing was removed.'
+      NATIVE_ROOT=${BASH_REMATCH[1]}
+      [[ -z ${MODUDOCK_DSM_ROOT+x} || "$MODUDOCK_DSM_ROOT" == "$NATIVE_ROOT" ]] || die 'Explicit DSM root differs from the service; nothing was removed.'
+      [[ -z ${MODUDOCK_DSM_VOLUME+x} || "$NATIVE_ROOT/" == "$MODUDOCK_DSM_VOLUME/"* ]] || die 'Explicit DSM volume differs from the service; nothing was removed.'
+      MODUDOCK_DSM_ROOT=$NATIVE_ROOT
+    else
+      MODUDOCK_DSM_ROOT=${MODUDOCK_DSM_ROOT:-${MODUDOCK_DSM_VOLUME:-/volume1}/modudock}
+    fi
+    configure_platform
+  elif [[ -n "$binary" && "$binary" != "$INSTALL_DIR/modudock" ]]; then
+    die 'Service uses a different executable; nothing was removed.'
+  fi
+  for property in "$INSTALL_DIR/modudock" "$UNIT_FILE" "$BACKUP_DIR"; do
+    safe_path "$property" || die 'Unsafe removal path.'
+    reject_symlink_parents "$property"
+  done
+  [[ ! -e "$INSTALL_DIR/modudock" || -f "$INSTALL_DIR/modudock" ]] || die 'Executable target is not a regular file.'
+  [[ ! -e "$UNIT_FILE" || -f "$UNIT_FILE" ]] || die 'Unit target is not a regular file.'
+  if [[ "$state" == not-found && ! -e "$INSTALL_DIR/modudock" ]]; then
+    log 'No managed service or executable found. Config, data and all retained files are unchanged.'
+    log 'For an orphaned custom DSM installation, set MODUDOCK_DSM_ROOT explicitly.'
+    exec 9>&-
+    return
+  fi
+  if [[ -f "$UNIT_FILE" ]]; then
+    install -d -m 0700 -o root -g root "$BACKUP_DIR"
+    backup=$(mktemp -d "$BACKUP_DIR/uninstall-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")
+    cp -a -- "$UNIT_FILE" "$backup/modudock.service" || die 'Service settings backup failed; nothing was removed.'
+    if [[ -d "${UNIT_FILE}.d" ]]; then
+      reject_symlink_parents "${UNIT_FILE}.d"
+      cp -a -- "${UNIT_FILE}.d" "$backup/service-overrides" || die 'Service overrides backup failed; nothing was removed.'
+    fi
+  fi
+  if [[ "$state" == loaded ]]; then
+    systemctl stop modudock || die 'Service stop failed; executable and unit retained.'
+    systemctl disable modudock || die 'Service disable failed; executable and unit retained.'
+  fi
+  reject_symlink_parents "$INSTALL_DIR/modudock"
+  reject_symlink_parents "$UNIT_FILE"
+  rm -f -- "$INSTALL_DIR/modudock" "$UNIT_FILE" || die 'Could not remove executable/unit. Config and data were not removed.'
+  systemctl daemon-reload || die 'Files removed but systemd reload failed. Run systemctl daemon-reload manually.'
+  log "Removed executable: $INSTALL_DIR/modudock"
+  log "Removed service registration: $UNIT_FILE"
+  [[ -z "$backup" ]] || log "Service settings backup retained: $backup"
+  log 'Config, data, logs, backups, drop-ins, logrotate rules and service account were preserved.'
+  exec 9>&-
+}
 main() {
-  (($# == 0)) || die 'Usage: install.sh (optional MODUDOCK_VERSION=vX.Y.Z and MODUDOCK_HEALTH_URL=http://127.0.0.1:7438).'
+  if [[ $# == 1 && "$1" == uninstall ]]; then uninstall_native; return; fi
+  (($# == 0)) || die 'Usage: install.sh [uninstall] (optional MODUDOCK_VERSION, MODUDOCK_DSM_ROOT and MODUDOCK_HEALTH_URL).'
   [[ $(uname -s) == Linux ]] || die 'Linux only.'
   [[ $(id -u) == 0 ]] || die 'Run as root, for example curl ... | sudo bash.'
   local command arch version load_state new_install=0 account_exists=0
