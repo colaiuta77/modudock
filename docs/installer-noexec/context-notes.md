@@ -7,3 +7,4 @@
 - RED `bash scripts/test-install-noexec.sh`는 독립 mount namespace의 실제 noexec tmpfs에서 후보 실행 Permission denied와 기존 잘못된 YAML 미지원 메시지로 실패했다. `bash scripts/test-install.sh`는 추가한 root 소유권 테스트에서 unsafe staging owner accepted로 실패했다.
 - WORK_DIR를 INSTALL_DIR 아래 root 전용 mktemp 폴더로 옮겼다. DSM native root를 먼저 검증하고 실행 staging 부모의 root 소유권·group/other 쓰기 금지와 symlink를 확인한다. 기존 서비스 중지·백업·원자적 활성화 순서는 보존한다.
 - GREEN 실제 noexec 전체 설치 테스트, 실행 차단 오류 구분, Linux/DSM 설치와 uninstall 회귀가 모두 통과했다. noexec 테스트는 별도 namespace에서만 mount하며 host 마운트 옵션을 변경하지 않는다. 최종 검증 후 독립 리뷰와 main 게시를 진행한다.
+- 9cadc5b 독립 안전성 검토에서 게시 승인받았다. root 전용 staging·직계 작업 폴더만 정리·검사 후 서비스 중지 순서·실제 noexec 테스트를 확인했다. 실제 DSM 장비 실행은 아직 하지 않았다.
