@@ -16,4 +16,7 @@
 - logrotate 규칙은 신규 설치에 항상 준비하되 실행파일과 활성 logrotate.timer가 모두 확인된 경우에만 별도 service.log를 활성화한다. cron 스크립트 존재는 예약 실행을 보장하지 않아 자동 감지하지 않는다. timer 부재는 명확히 안내하고 core.jsonl 자체 회전과 journal을 유지한다. 수동 cron 구성과 copytruncate 손실 가능성·크기 확인 주기 제한은 설치 문서에 기록했다.
 - 완료 안내는 Version·Access·Binary·Config·Data·로그·systemctl 명령을 줄별로 출력한다. legacy CLI 설치는 없는 config 경로 대신 기존 systemd 인자 보존을 표시한다. 기존 unit/drop-in/config는 자동 변환하지 않는다.
 - 17aafce까지 독립 검토에서 지적한 timer 확인과 DSM bin 중첩 마운트 검사를 보완했으며 재검토 승인받았다. 전체 Go tests/vet, Linux·DSM Bash tests, 프론트 48 tests, 내장 UI 빌드 및 기존/설정 기반 실제 binary smoke가 통과했다. 로컬 Docker 엔진은 비활성이라 이미지와 Linux race/취약점 검사는 GitHub CI에서 확인한다.
+- 2026-10-26 배포. c892231을 main에 게시하고 CI 40282174855 전체 성공 후 동일 커밋에 v0.2.0 태그를 발행했다. 릴리스 CI 40282982385에서 validate·5종 binaries·publish가 모두 성공했다. 최신 공개 릴리스는 https://github.com/colaiuta77/modudock/releases/tag/v0.2.0 이다.
+- 배포 자산 5종을 실제 다운로드해 SHA256SUMS와 모두 일치함을 확인했다. Linux amd64 배포 바이너리는 WSL에서 version=v0.2.0 및 config check 성공, Windows 배포 바이너리는 scripts/smoke.mjs와 scripts/config-smoke.mjs 모두 통과했다. ghcr.io/colaiuta77/modudock:0.2.0 manifest의 linux/amd64·linux/arm64를 확인했다.
+- 원격 NAS·Oracle의 서비스와 데이터는 수정하지 않았다. 실제 장비 설치·재부팅·DSM 권한과 방화벽·DHCP 변경·현장 logrotate 실행은 미검증이다. 기존 CLI 기반 unit은 업데이트 시 보존되며 YAML로 자동 이전하지 않는다.
 - 독립 검토 후속 수정. 실제 rotation_available을 유지하고 command/systemctl 경계만 대역한 테스트로 inactive timer의 잘못된 허용을 RED로 확인했다. DSM bin NFS/tmpfs 마운트 거부 테스트도 추가하여 INSTALL_DIR 검증 누락을 재현했다. 제품 변경은 활성 timer 확인과 DSM 검증 대상 경로 추가로 제한한다.

@@ -7,5 +7,5 @@
 - [x] 리스닝 선택·public-url·health·기존 설정 보존 회귀 테스트 RED.
 - [x] 최소 구현과 설치 문서 갱신.
 - [x] Bash·Go 테스트와 독립 리뷰 통과. 17aafce 기준 Critical/Important 없음.
-- [ ] 커밋·main 게시·CI 확인.
-- [ ] v0.2.0 릴리스·자산 검증.
+- [x] 커밋·main 게시·CI 확인. 40282174855 성공.
+- [x] v0.2.0 릴리스·자산 검증. 40282982385 성공, 아카이브 5종 SHA-256 일치, 배포 실행파일 smoke 통과, Docker amd64/arm64 manifest 확인.
