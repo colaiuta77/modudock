@@ -10,6 +10,14 @@ DATA_DIR=/var/lib/modudock
 UNIT_FILE=/etc/systemd/system/modudock.service
 SHARE_DIR=/usr/local/share/modudock
 BACKUP_DIR=/var/backups/modudock
+CONFIG_FILE=/etc/modudock/config.yaml
+LOG_DIR=/var/log/modudock
+LOGROTATE_FILE=/etc/logrotate.d/modudock
+LISTEN=127.0.0.1:7438
+PUBLIC_URL=''
+LOG_FILE=''
+EXISTING_CONFIG=''
+EXISTING_SERVICE=0
 LOCK_FILE=/run/modudock-installer/install.lock
 WORK_DIR=''
 BACKUP_PATH=''
@@ -39,16 +47,115 @@ configure_platform() {
   PLATFORM=$(detect_platform)
   if [[ "$PLATFORM" == dsm ]]; then
     [[ $(awk -F '"' '$1=="majorversion=" {print $2}' "$DSM_VERSION_FILE") == 7 ]] || die 'DSM 7 is required.'
-    DSM_VOLUME=${MODUDOCK_DSM_VOLUME:-/volume1}
+    NATIVE_ROOT=${MODUDOCK_DSM_ROOT:-${MODUDOCK_DSM_VOLUME:-/volume1}/modudock}
+    if [[ -z ${MODUDOCK_DSM_ROOT+x} && -z ${MODUDOCK_DSM_VOLUME+x} && ! -f "$UNIT_FILE" && ! -e "$NATIVE_ROOT/bin/modudock" ]] && { exec 3<>/dev/tty; } 2>/dev/null; then
+      local root_input
+      IFS= read -r -p "DSM installation root [$NATIVE_ROOT]: " -u 3 root_input || die 'DSM root input cancelled.'
+      NATIVE_ROOT=${root_input:-$NATIVE_ROOT}
+      exec 3>&-
+    fi
+    safe_path "$NATIVE_ROOT" || die 'DSM root must be an absolute path without spaces, traversal or special characters.'
+    [[ "$NATIVE_ROOT" =~ ^(/volume[1-9][0-9]*)/.+ ]] || die 'DSM root must be below a mounted /volumeN path.'
+    DSM_VOLUME=${BASH_REMATCH[1]}
     [[ "$DSM_VOLUME" =~ ^/volume[1-9][0-9]*$ ]] || die 'MODUDOCK_DSM_VOLUME must be a mounted /volumeN path.'
     awk -v volume="$DSM_VOLUME" '$2==volume {type=$3} END {exit !(type=="btrfs" || type=="ext4")}' "$MOUNTS_FILE" || die 'The selected DSM volume must be a mounted local btrfs/ext4 volume.'
     PATH="/usr/syno/sbin:/usr/syno/bin:$PATH"
-    NATIVE_ROOT="$DSM_VOLUME/modudock"
     INSTALL_DIR="$NATIVE_ROOT/bin"
     DATA_DIR="$NATIVE_ROOT/data"
     SHARE_DIR="$NATIVE_ROOT/share"
     BACKUP_DIR="$NATIVE_ROOT/backups"
+    CONFIG_FILE="$NATIVE_ROOT/config/config.yaml"
+    LOG_DIR="$NATIVE_ROOT/logs"
+    validate_dsm_storage
   fi
+}
+validate_dsm_storage() {
+  [[ "$PLATFORM" == dsm ]] || return 0
+  local mount type path
+  while read -r mount type; do
+    for path in "$NATIVE_ROOT" "$DATA_DIR" "${CONFIG_FILE%/*}" "$LOG_DIR" "$SHARE_DIR" "$BACKUP_DIR"; do
+      if [[ "$path/" == "$mount/"* && "$type" != btrfs && "$type" != ext4 ]]; then die 'DSM storage cannot be on a nested network or virtual mount.'; fi
+    done
+  done < <(awk '{print $2, $3}' "$MOUNTS_FILE")
+}
+safe_path() { [[ "$1" =~ ^/[A-Za-z0-9._/-]+$ && "$1" != *'//'* && "$1/" != *'/../'* && "$1/" != *'/./'* ]]; }
+reject_symlink_parents() {
+  local path=$1
+  while [[ "$path" != / && -n "$path" ]]; do
+    [[ ! -L "$path" ]] || die "Refusing a symbolic-link installation path: $path"
+    path=${path%/*}
+  done
+}
+valid_port() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && ((10#$1 > 0 && 10#$1 <= 65535)); }
+validate_network() {
+  [[ "$LISTEN" =~ ^([A-Za-z0-9.-]*|\[[0-9a-fA-F:]+\]):([0-9]+)$ ]] && valid_port "${BASH_REMATCH[2]}" || die 'Listen must be a host:port address with port 1-65535.'
+  if [[ -n "$PUBLIC_URL" ]]; then
+    [[ "$PUBLIC_URL" =~ ^https?://(\[[0-9a-fA-F:]+\]|[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)(:([0-9]+))?$ ]] || die 'Public URL must be an exact HTTP(S) origin (no path, slash, credentials, query or fragment).'
+    [[ -z ${BASH_REMATCH[4]:-} ]] || valid_port "${BASH_REMATCH[4]}" || die 'Invalid public URL port.'
+  fi
+}
+detect_ipv4() {
+  command -v ip >/dev/null || return 0
+  ip -o -4 addr show scope global 2>/dev/null | awk '$2 !~ /^(docker[0-9]|veth|br-|virbr|cni|flannel|lo$)/ {split($4,a,"/"); if (a[1] !~ /^(127\.|169\.254\.)/) print a[1]}' | awk '!seen[$0]++' || true
+}
+configure_network() {
+  LISTEN=${MODUDOCK_LISTEN:-127.0.0.1:7438}
+  PUBLIC_URL=${MODUDOCK_PUBLIC_URL:-}
+  if [[ -z ${MODUDOCK_LISTEN+x} ]] && { exec 3<>/dev/tty; } 2>/dev/null; then
+    local choice input i=2
+    local candidates=()
+    mapfile -t candidates < <(detect_ipv4)
+    printf 'Listen choices. 1) Local only (127.0.0.1:7438)\n' >&3
+    for input in "${candidates[@]}"; do printf '%s) %s:7438\n' "$i" "$input" >&3; ((i+=1)); done
+    printf '%s) All IPv4 interfaces (0.0.0.0:7438)\n%s) Custom host:port\n' "$i" "$((i+1))" >&3
+    IFS= read -r -p 'Select listener [1]: ' -u 3 choice || die 'Network input cancelled.'
+    choice=${choice:-1}
+    [[ "$choice" =~ ^[0-9]{1,2}$ ]] || die 'Invalid listener choice.'
+    if ((choice == i)); then LISTEN=0.0.0.0:7438
+    elif ((choice == i+1)); then IFS= read -r -p 'Listen host:port: ' -u 3 LISTEN || die 'Network input cancelled.'
+    elif ((choice >= 2 && choice < i)); then LISTEN="${candidates[choice-2]}:7438"
+    elif ((choice != 1)); then die 'Invalid listener choice.'; fi
+    exec 3>&-
+  fi
+  if [[ -z ${MODUDOCK_PUBLIC_URL+x} ]] && { exec 3<>/dev/tty; } 2>/dev/null; then
+    IFS= read -r -p 'Browser HTTP(S) origin (empty for local/automatic origin): ' -u 3 PUBLIC_URL || die 'Public URL input cancelled.'
+    exec 3>&-
+  fi
+  validate_network
+  [[ "$LISTEN" != 0.0.0.0:* && "$LISTEN" != '[::]:'* && "$LISTEN" != :* ]] || log 'WARNING: listening on ALL interfaces. Limit LAN/Internet exposure with host, NAS and upstream firewall rules.'
+  [[ -n "$PUBLIC_URL" ]] || log 'No public URL set. Configure an explicit HTTPS origin before enabling remote passkeys.'
+}
+listener_health_url() {
+  local host=${LISTEN%:*} port=${LISTEN##*:}
+  case "$host" in ''|0.0.0.0) host=127.0.0.1;; '[::]') host='[::1]';; esac
+  printf 'http://%s:%s' "$host" "$port"
+}
+write_config() {
+  printf 'data_dir: "%s"\nlisten: "%s"\npublic_url: "%s"\nlog_file: "%s"\n' "$DATA_DIR" "$LISTEN" "$PUBLIC_URL" "$LOG_FILE" > "$WORK_DIR/config.yaml"
+}
+check_candidate_config() {
+  chmod 0700 "$CANDIDATE"
+  printf 'data_dir: /modudock-config-capability-probe\n' > "$WORK_DIR/probe.yaml"
+  [[ $("$CANDIDATE" config check --config "$WORK_DIR/probe.yaml" --field data_dir) == /modudock-config-capability-probe ]] || die 'Downloaded binary lacks YAML config support. Select a config-capable release (v0.2.0 or newer); installation unchanged.'
+}
+rotation_available() {
+  command -v logrotate >/dev/null && { [[ -x /etc/cron.daily/logrotate ]] || systemctl is-active --quiet logrotate.timer; }
+}
+show_installation() {
+  log '----------------------------------------'
+  log "Version: $1"
+  log "Access: ${PUBLIC_URL:-$(listener_health_url)}"
+  log "Binary: $INSTALL_DIR/modudock"
+  log "Config: ${EXISTING_CONFIG:-$CONFIG_FILE}"
+  log "Data: $DATA_DIR"
+  log "Operational log: ${LOG_FILE:-disabled (journal and bounded UI logs only)}"
+  log "Logrotate rule: $LOGROTATE_FILE"
+  log 'Logs: journalctl -u modudock -n 100'
+  log 'Status: systemctl status modudock'
+  log 'Restart: systemctl restart modudock'
+  log 'Stop: systemctl stop modudock'
+  log '----------------------------------------'
+  [[ "$LISTEN" != 0.0.0.0:* && "$LISTEN" != '[::]:'* && "$LISTEN" != :* ]] || log "Use this host's reachable LAN IP for direct browser access; loopback above is only the local health target."
 }
 systemd_property() {
   local property=$1 output
@@ -103,20 +210,28 @@ prepare_install_lock() {
   flock -n 9 || die 'Another ModuDock installation is running.'
 }
 prepare_service_unit() {
-  if [[ "$PLATFORM" == dsm ]]; then
-    awk -v volume="$DSM_VOLUME" -v data="$DATA_DIR" -v binary="$INSTALL_DIR/modudock" '
-      /^Description=/ {print; print "RequiresMountsFor=" volume; next}
-      /^StateDirectory/ {next}
+    awk -v platform="$PLATFORM" -v volume="$DSM_VOLUME" -v data="$DATA_DIR" -v binary="$INSTALL_DIR/modudock" -v config="$CONFIG_FILE" -v logs="$LOG_DIR" -v log_file="$LOG_FILE" '
+      /^Description=/ {print; if (platform=="dsm") print "RequiresMountsFor=" volume; next}
+      /^StateDirectory/ {if (platform!="dsm") print; next}
       /^WorkingDirectory=/ {print "WorkingDirectory=" data; next}
-      /^ExecStart=/ {print "ExecStart=" binary " serve --data-dir " data " --listen 127.0.0.1:7438"; next}
-      /^ProtectSystem=/ {print; print "ReadWritePaths=" data; next}
+      /^ExecStart=/ {print "ExecStart=" binary " serve --config " config; next}
+      /^ReadWritePaths=/ {next}
+      /^ProtectSystem=/ {print; print "ReadWritePaths=" data (log_file!="" ? " " logs : ""); next}
       {print}
-    ' "$WORK_DIR/modudock.service" > "$WORK_DIR/modudock-dsm.service"
-    mv "$WORK_DIR/modudock-dsm.service" "$WORK_DIR/modudock.service"
-  fi
+    ' "$WORK_DIR/modudock.service" > "$WORK_DIR/modudock-native.service"
+    mv "$WORK_DIR/modudock-native.service" "$WORK_DIR/modudock.service"
 }
 prepare_native_root() {
   [[ "$PLATFORM" == dsm ]] || return 0
+  local parent=${NATIVE_ROOT%/*} mode
+  while [[ "$parent" != "$DSM_VOLUME" && "$parent" != / ]]; do
+    if [[ -e "$parent" ]]; then
+      [[ -d "$parent" && $(stat -c %u "$parent") == 0 ]] || die 'DSM root parents must be root-owned directories.'
+      mode=$(stat -c %a "$parent")
+      (( (8#$mode & 0022) == 0 )) || die 'DSM root parents must not be writable by group or others.'
+    fi
+    parent=${parent%/*}
+  done
   [[ ! -L "$DSM_VOLUME" && ! -L "$NATIVE_ROOT" ]] || die 'DSM native root must not be a symbolic link.'
   if [[ -e "$NATIVE_ROOT" ]]; then
     [[ -d "$NATIVE_ROOT" && $(stat -c %u "$NATIVE_ROOT") == 0 ]] || die 'Existing DSM native root must be a root-owned directory.'
@@ -142,8 +257,10 @@ release_version() {
 }
 validate_paths() {
   local path
-  for path in "$INSTALL_DIR" "$INSTALL_DIR/modudock" "$DATA_DIR" "$DATA_DIR/core.lock" "$UNIT_FILE" "$SHARE_DIR" "$BACKUP_DIR" "$LOCK_FILE"; do
-    [[ ! -L "$path" ]] || die "Refusing a symbolic-link installation target: $path"
+  validate_dsm_storage
+  for path in "$INSTALL_DIR" "$INSTALL_DIR/modudock" "$DATA_DIR" "$DATA_DIR/core.lock" "$UNIT_FILE" "$SHARE_DIR" "$BACKUP_DIR" "$LOCK_FILE" "$CONFIG_FILE" "$LOG_DIR" "$LOGROTATE_FILE"; do
+    safe_path "$path" || die "Unsafe installation path: $path"
+    reject_symlink_parents "$path"
   done
   [[ ! -e "$DATA_DIR" || -d "$DATA_DIR" ]] || die 'Data path is not a directory.'
   [[ ! -e "$UNIT_FILE" || -f "$UNIT_FILE" ]] || die 'Service path is not a regular file.'
@@ -186,7 +303,8 @@ prompt_admin() {
   exec 3>&-
 }
 validate_existing_service() {
-  local execution arguments value property data_count=0
+  local execution arguments value property data_count=0 config_count=0 config_path='' data_argument=''
+  local overrides=()
   execution=$(systemd_property ExecStart modudock) || die 'Cannot inspect the existing service.'
   [[ "$execution" == *"path=$INSTALL_DIR/modudock ;"* && "$execution" == *'argv[]='* ]] || die 'Existing service uses a different executable; migrate it manually before updating.'
   arguments=${execution#*'argv[]='}; arguments=${arguments%%' ;'*}
@@ -198,18 +316,51 @@ validate_existing_service() {
   while (($#)); do
     case "$1" in
       --data-dir|-data-dir)
-        [[ $# -ge 2 && "$2" == "$DATA_DIR" ]] || die 'Existing service uses a different data directory; automatic update refused.'
+        [[ $# -ge 2 ]] || die 'Invalid data-dir argument.'
+        data_argument=$2
+        overrides+=(--data-dir "$2")
         ((data_count+=1)); shift 2;;
       --data-dir=*|-data-dir=*)
-        [[ ${1#*=} == "$DATA_DIR" ]] || die 'Existing service uses a different data directory; automatic update refused.'
+        data_argument=${1#*=}
+        overrides+=(--data-dir "${1#*=}")
         ((data_count+=1)); shift;;
-      --listen|-listen|--public-url|-public-url)
-        [[ $# -ge 2 ]] || die 'Invalid service arguments.'; shift 2;;
-      --listen=*|-listen=*|--public-url=*|-public-url=*) shift;;
+      --config|-config)
+        [[ $# -ge 2 ]] || die 'Invalid config argument.'; config_path=$2; ((config_count+=1)); shift 2;;
+      --config=*|-config=*) config_path=${1#*=}; ((config_count+=1)); shift;;
+      --listen|-listen|--public-url|-public-url|--log-file|-log-file)
+        [[ $# -ge 2 ]] || die 'Invalid service arguments.'
+        case "$1" in *listen) LISTEN=$2; overrides+=(--listen "$2");; *public-url) PUBLIC_URL=$2; overrides+=(--public-url "$2");; *log-file) LOG_FILE=$2; overrides+=(--log-file "$2");; esac
+        shift 2;;
+      --listen=*|-listen=*|--public-url=*|-public-url=*|--log-file=*|-log-file=*)
+        value=${1#*=}
+        case "$1" in *listen=*) LISTEN=$value; overrides+=(--listen "$value");; *public-url=*) PUBLIC_URL=$value; overrides+=(--public-url "$value");; *log-file=*) LOG_FILE=$value; overrides+=(--log-file "$value");; esac
+        shift;;
       *) die 'Unsupported or environment-expanded service arguments; migrate the unit to explicit paths before updating.';;
     esac
   done
-  [[ $data_count == 1 ]] || die 'Existing service must name exactly one supported absolute data directory.'
+  [[ $data_count -le 1 && $config_count -le 1 ]] || die 'Existing service has duplicate config/data arguments.'
+  if ((config_count)); then
+    safe_path "$config_path" || die 'Existing config path must be a supported absolute path.'
+    reject_symlink_parents "$config_path"
+    [[ -f "$config_path" ]] || die 'Existing config file is missing.'
+    check_candidate_config
+    local effective=(config check --config "$config_path" "${overrides[@]}")
+    DATA_DIR=$("$CANDIDATE" "${effective[@]}" --field data_dir) || die 'Existing config validation failed.'
+    LISTEN=$("$CANDIDATE" "${effective[@]}" --field listen) || die 'Cannot resolve configured listener.'
+    PUBLIC_URL=$("$CANDIDATE" "${effective[@]}" --field public_url) || die 'Cannot resolve configured public URL.'
+    LOG_FILE=$("$CANDIDATE" "${effective[@]}" --field log_file) || die 'Cannot resolve configured log file.'
+    safe_path "$DATA_DIR" || die 'Existing config data_dir must be an explicit supported absolute path.'
+    [[ -f "$DATA_DIR/core.db" ]] || die 'Configured database is missing; refusing to create a replacement database.'
+    [[ -z "$LOG_FILE" ]] || { safe_path "$LOG_FILE" && rotation_available && [[ -f "$LOGROTATE_FILE" ]]; } || die 'Existing file logging needs a safe absolute path and scheduled logrotate with a rule; configure rotation before updating.'
+    CONFIG_FILE=$config_path
+    EXISTING_CONFIG=$config_path
+  else
+    [[ $data_count == 1 ]] || die 'Existing service must name exactly one supported absolute data directory.'
+    [[ "$data_argument" == "$DATA_DIR" ]] || die 'Existing legacy service uses a different data directory; automatic update refused.'
+    EXISTING_CONFIG='existing systemd arguments (preserved)'
+    PUBLIC_URL=${PUBLIC_URL%/}
+    validate_network
+  fi
   [[ $(systemd_property User modudock) == modudock ]] || die 'Existing service must run as the modudock account.'
   [[ $(systemd_property Group modudock) == modudock ]] || die 'Existing service must use the modudock group.'
   for property in RootDirectory RootImage BindPaths BindReadOnlyPaths TemporaryFileSystem; do
@@ -242,6 +393,8 @@ backup_installation() {
   [[ ! -d "$DATA_DIR" ]] || cp -a -- "$DATA_DIR" "$BACKUP_PATH/data" || die 'Data backup failed. Existing binary was not replaced.'
   [[ ! -f "$INSTALL_DIR/modudock" ]] || cp -a -- "$INSTALL_DIR/modudock" "$BACKUP_PATH/modudock" || die 'Binary backup failed.'
   [[ ! -f "$UNIT_FILE" ]] || cp -a -- "$UNIT_FILE" "$BACKUP_PATH/modudock.service" || die 'Service backup failed.'
+  [[ ! -f "$CONFIG_FILE" ]] || cp -a -- "$CONFIG_FILE" "$BACKUP_PATH/config.yaml" || die 'Config backup failed.'
+  [[ ! -f "$LOGROTATE_FILE" ]] || cp -a -- "$LOGROTATE_FILE" "$BACKUP_PATH/logrotate" || die 'Log rotation backup failed.'
   [[ ! -d /etc/systemd/system/modudock.service.d ]] || cp -a /etc/systemd/system/modudock.service.d "$BACKUP_PATH/service-overrides" || die 'Service override backup failed.'
   log "Backup retained at $BACKUP_PATH (includes core.db, auth.key and plugin data)."
 }
@@ -280,15 +433,26 @@ main() {
   trap cleanup EXIT
   version=$(release_version)
   download_release "$version" "$arch"
-  prepare_service_unit
-  [[ -f "$DATA_DIR/core.db" ]] || new_install=1
-  if ((new_install)); then prompt_admin; fi
-  if service_account_exists; then account_exists=1; validate_service_account; fi
-  if [[ "$PLATFORM" == dsm ]]; then ensure_dsm_group; verify_service_execution; prepare_native_root; fi
   load_state=$(systemd_property LoadState modudock) || die 'Cannot inspect the existing service load state.'
   if [[ -f "$UNIT_FILE" || "$load_state" == loaded ]]; then
     validate_existing_service
+    EXISTING_SERVICE=1
+  else
+    check_candidate_config
+    [[ ! -e "$CONFIG_FILE" ]] || die 'Config exists without a recognized service. Resolve its paths manually before installation.'
+    configure_network
+    if rotation_available; then LOG_FILE="$LOG_DIR/service.log"; else LOG_FILE=''; log 'Scheduled logrotate unavailable: journal and bounded UI logs only; no optional file log enabled.'; fi
+    write_config
+    "$CANDIDATE" config check --config "$WORK_DIR/config.yaml" >/dev/null || die 'New config is invalid.'
   fi
+  validate_paths
+  [[ -f "$DATA_DIR/core.db" ]] || new_install=1
+  log "Preparing $version on $PLATFORM."
+  show_installation "$version"
+  if ((new_install)); then prompt_admin; fi
+  if service_account_exists; then account_exists=1; validate_service_account; fi
+  if [[ "$PLATFORM" == dsm ]]; then ensure_dsm_group; verify_service_execution; prepare_native_root; fi
+  prepare_service_unit
   [[ ! -d "$DATA_DIR" || $account_exists == 1 ]] || die 'Existing data has no modudock service account; migrate it manually before updating.'
   if systemctl is-active --quiet modudock; then systemctl stop modudock || die 'Could not stop the existing service.'; fi
   validate_paths
@@ -307,7 +471,14 @@ main() {
   mv -f -- "$STAGED_BINARY" "$INSTALL_DIR/modudock" || die 'Could not replace the binary.'
   STAGED_BINARY=''
   install -m 0644 "$WORK_DIR/LICENSE" "$WORK_DIR/third-party-notices.txt" "$SHARE_DIR/"
-  if [[ ! -f "$UNIT_FILE" ]]; then
+  if ((EXISTING_SERVICE == 0)); then
+    install -d -m 0750 -o root -g modudock "${CONFIG_FILE%/*}"
+    install -m 0640 -o root -g modudock "$WORK_DIR/config.yaml" "$CONFIG_FILE"
+    install -d -m 0700 -o modudock -g modudock "$LOG_DIR"
+    install -d -m 0700 -o root -g root "$BACKUP_DIR"
+    install -d -m 0755 "${LOGROTATE_FILE%/*}"
+    printf '%s {\n  daily\n  maxsize 5M\n  rotate 7\n  missingok\n  notifempty\n  compress\n  copytruncate\n  su modudock modudock\n}\n' "$LOG_DIR/service.log" > "$WORK_DIR/logrotate"
+    install -m 0644 -o root -g root "$WORK_DIR/logrotate" "$LOGROTATE_FILE"
     install -m 0644 "$WORK_DIR/modudock.service" "$UNIT_FILE"
   else
     log 'Existing systemd unit and overrides preserved.'
@@ -322,12 +493,12 @@ main() {
   systemctl start modudock || die 'systemd could not start ModuDock.'
   local attempt healthy=0
   for attempt in {1..15}; do
-    if systemctl is-active --quiet modudock && as_service "$INSTALL_DIR/modudock" healthcheck --url "${MODUDOCK_HEALTH_URL:-http://127.0.0.1:7438}"; then healthy=1; break; fi
+    if systemctl is-active --quiet modudock && as_service "$INSTALL_DIR/modudock" healthcheck --url "${MODUDOCK_HEALTH_URL:-$(listener_health_url)}"; then healthy=1; break; fi
     sleep 1
   done
   ((healthy)) || die 'Service did not become healthy. For a custom port, set MODUDOCK_HEALTH_URL to its local HTTP origin.'
-  log "Installed $version. systemd service: modudock. Default access: http://127.0.0.1:7438"
-  log 'LAN/HTTPS access: configure a systemd override and reverse proxy; no firewall rules were changed.'
+  log "Installed $version. systemd service: modudock; no firewall rules were changed."
+  show_installation "$version"
 }
 
 if [[ -z ${BASH_SOURCE[0]:-} || ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

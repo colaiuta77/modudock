@@ -65,17 +65,36 @@ curl -fsSL https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/in
 ```sh
 curl -fsSLo install.sh https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh
 less install.sh
-sudo env MODUDOCK_VERSION=v0.1.0 bash install.sh
+sudo env MODUDOCK_VERSION=v0.2.0 bash install.sh
 ```
 
-- 첫 설치는 관리자 이름과 숨김 비밀번호를 `/dev/tty`로 입력합니다. 기본 비밀번호가 없으며 SSH 대화형 터미널이 필요합니다. 시스템 패키지 설치나 방화벽 변경은 하지 않습니다.
-- 실행파일은 `/usr/local/bin/modudock`, 데이터는 `/var/lib/modudock`, 서비스는 `modudock`입니다. 비root `modudock` 계정과 기본 loopback `127.0.0.1:7438`을 사용합니다. LAN 공개나 HTTPS 프록시는 아래 수동 설정을 따릅니다.
-- 같은 명령을 다시 실행하면 업데이트합니다. 다운로드·SHA-256·필수 파일 검증 후 서비스를 중지하고 데이터 전체·기존 실행파일·unit/drop-in을 `/var/backups/modudock/날짜.고유값`에 보관합니다. 백업은 비밀값을 포함하므로 root만 접근하며 자동 삭제하지 않습니다.
-- 기존 서비스 파일과 drop-in은 덮어쓰지 않습니다. 포트를 변경한 경우 `sudo env MODUDOCK_HEALTH_URL=http://127.0.0.1:변경포트 bash install.sh`로 실제 로컬 health 주소를 지정합니다. 최신 버전 대신 고정 버전을 사용하려면 `MODUDOCK_VERSION`도 함께 지정합니다.
+- 첫 설치는 `/dev/tty`에서 로컬 전용·감지 IPv4·전체 IPv4 인터페이스·직접 `host:port` 입력 중 선택하고, 브라우저의 정확한 HTTP(S) origin을 입력합니다. Docker/veth 주소는 후보에서 제외하고 DSM LAN bridge는 유지합니다. 감지는 추천 후보일 뿐 자동 적용하지 않습니다. 관리자 이름과 숨김 비밀번호도 터미널에서 입력하며 기본 비밀번호는 없습니다. 시스템 패키지 설치나 방화벽 변경은 하지 않습니다.
+- 실행파일은 `/usr/local/bin/modudock`, 설정은 `/etc/modudock/config.yaml`, 데이터는 `/var/lib/modudock`, 서비스는 `modudock`입니다. 비root `modudock` 계정을 사용하며 미입력 기본값은 loopback `127.0.0.1:7438`입니다. 신규 YAML 설치에는 v0.2.0 이상 설정 지원 실행파일이 필요합니다. 구버전 다운로드는 서비스 중지·설치 파일 변경 전에 거부합니다.
+- 네트워크 질문은 `MODUDOCK_LISTEN=192.168.1.100:7438 MODUDOCK_PUBLIC_URL=https://modudock.example.org`로 명시할 수 있습니다. 비대화형 네트워크 기본값은 loopback과 빈 public-url이지만 최초 관리자 생성에는 SSH 터미널이 여전히 필요합니다. `public_url`에는 경로, 끝 슬래시, 사용자정보, query, fragment를 넣지 않습니다. 비우면 기존 자동 Origin 동작을 유지하며 원격 passkey를 위해 명시적 HTTPS origin을 설정해야 합니다.
+- 같은 명령을 다시 실행하면 업데이트합니다. 다운로드·SHA-256·필수 파일·설정을 검증한 후 서비스를 중지하고 데이터 전체·기존 실행파일·config·logrotate 설정·unit/drop-in을 `/var/backups/modudock/날짜.고유값`에 보관합니다. 백업은 비밀값을 포함하므로 root만 접근하며 자동 삭제하지 않습니다.
+- 기존 서비스 파일과 drop-in, config, 데이터 위치는 덮어쓰거나 자동 이전하지 않습니다. 업데이트에서는 네트워크 질문을 다시 하지 않습니다. config 기반 unit은 실제 config와 CLI override를 해석하고, DB가 없거나 경로가 불명확하면 서비스 중지 전에 거부합니다. 기존 기본 경로 `--data-dir` 서비스도 유지합니다.
+- health는 public-url이 아닌 실제 listener에 HTTP로 요청합니다. `0.0.0.0`은 `127.0.0.1`, `[::]`은 `[::1]`로 검사합니다. `MODUDOCK_HEALTH_URL=http://로컬주소:포트`가 명시되면 우선합니다. 최신 버전 대신 고정 버전을 사용하려면 `MODUDOCK_VERSION`도 지정합니다.
 - 자동 업데이트는 실행파일 `/usr/local/bin/modudock`, 데이터 `/var/lib/modudock`, 서비스 계정 `modudock`을 명시한 unit만 지원합니다. 다른 데이터 경로·실행파일·환경변수 치환·chroot/경로 매핑이 있는 unit은 서비스 중지 전에 거부합니다. 지원 경로로 수동 이전하거나 수동 업데이트해야 합니다.
 - 시작 실패 시 백업 경로와 진단 명령을 출력합니다. DB 마이그레이션 때문에 실행파일만 자동 롤백하지 않습니다. 복구는 서비스를 중지한 뒤 **이전 실행파일과 전체 데이터 백업**을 함께 복원해야 합니다.
 - SHA-256은 내려받은 릴리스 파일의 무결성을 검사합니다. 별도 서명 검증은 없으므로 저장소와 HTTPS 배포 경로를 신뢰해야 합니다. 운영에서는 스크립트 검토와 버전 고정을 권장합니다.
 - 미리 존재하는 `core.db`가 있으면 관리자 계정 생성은 건너뜁니다. 첫 계정 생성 중 실패한 설치는 서버를 멈춘 상태에서 아래 `admin create` 명령으로 계정을 만든 뒤 다시 실행하세요.
+
+YAML 설정의 최소 예제입니다. `serve --config PATH`에서만 읽으며 기존 Docker·CLI 기본값은 유지합니다. 명시한 `--data-dir`, `--listen`, `--public-url`, `--log-file`은 YAML보다 우선합니다. 알 수 없는 필드, 중복 필드, 여러 YAML 문서, 문자열이 아닌 값과 잘못된 주소는 거부합니다. 관리자 암호·인증 비밀은 넣지 않습니다.
+
+```yaml
+data_dir: /var/lib/modudock
+listen: 192.168.1.100:7438
+public_url: https://modudock.example.org
+log_file: ""
+```
+
+```sh
+sudo /usr/local/bin/modudock config check --config /etc/modudock/config.yaml
+sudo systemctl restart modudock
+sudo -u modudock /usr/local/bin/modudock healthcheck --config /etc/modudock/config.yaml
+```
+
+`config check`는 DB·로그 파일을 만들거나 열지 않습니다. 설정은 root 소유·서비스 그룹 읽기 전용이며 서비스는 설정 디렉터리에 쓸 수 없습니다. 신규 설치는 `/etc/logrotate.d/modudock` 규칙을 준비하지만 예약된 logrotate(timer 또는 cron)가 확인될 때만 `/var/log/modudock/service.log` 출력을 활성화합니다. 회전이 없으면 규칙은 비활성 준비 상태이며 선택적 파일 로그를 끄고 journal과 자체 5 MiB×4 제한 UI 로그만 유지합니다. UI의 `data/logs/core.jsonl`은 logrotate 대상으로 삼지 않습니다. 운영 로그는 daily/maxsize 5M, 7개 보존, copytruncate이므로 회전 순간 일부 로그 손실 가능성이 있고 실제 예약 주기에 따라 5 MiB를 넘을 수 있습니다. 예약 작업의 실행을 운영 환경에서 확인하세요.
 
 ### 수동 설치
 
@@ -85,25 +104,33 @@ sudo env MODUDOCK_VERSION=v0.1.0 bash install.sh
 sha256sum -c SHA256SUMS --ignore-missing
 tar -xzf modudock-linux-amd64.tar.gz
 sudo install -m 0755 modudock-linux-amd64 /usr/local/bin/modudock
-sudo useradd --system --home-dir /var/lib/modudock --shell /usr/sbin/nologin modudock
+sudo useradd --system --user-group --home-dir /var/lib/modudock --shell /usr/sbin/nologin modudock
 sudo install -d -m 0700 -o modudock -g modudock /var/lib/modudock
 sudo -u modudock /usr/local/bin/modudock admin create --data-dir /var/lib/modudock --username admin
 ```
 
-`packaging/modudock.service`를 `/etc/systemd/system/modudock.service`에 설치한 뒤 필요하면 `ExecStart`에 `--public-url https://도메인`을 추가합니다.
+`packaging/config.yaml`을 준비하고 listen/public_url을 실제 환경에 맞춰 수정한 뒤 다음처럼 설치합니다. 운영 파일 로그는 기본 비활성입니다.
+
+```sh
+sudo install -d -m 0750 -o root -g modudock /etc/modudock
+sudo install -m 0640 -o root -g modudock packaging/config.yaml /etc/modudock/config.yaml
+sudo /usr/local/bin/modudock config check --config /etc/modudock/config.yaml
+sudo install -m 0644 packaging/modudock.service /etc/systemd/system/modudock.service
+```
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now modudock
+sudo systemctl enable modudock
+sudo systemctl start modudock
 sudo systemctl status modudock
 journalctl -u modudock -n 100
 ```
 
-systemd 예제는 loopback 접속으로 시작합니다. 직접 LAN 접속이 필요하면 `--listen 0.0.0.0:7438`로 변경하되 방화벽으로 허용 범위를 제한하세요. 비root 서비스 계정의 권한이 플러그인 권한이기도 합니다.
+systemd 예제는 config를 읽고 loopback 접속으로 시작합니다. 직접 LAN 접속이 필요하면 YAML의 listen을 변경하되 방화벽으로 허용 범위를 제한하세요. 전체 인터페이스 바인딩은 인터넷 노출까지 넓힐 수 있습니다. 비root 서비스 계정의 권한이 플러그인 권한이기도 합니다.
 
 ### Docker 리버스 프록시에서 네이티브 서버에 연결할 때
 
-프록시가 호스트 프로세스라면 loopback upstream을 사용할 수 있습니다. 프록시가 Docker bridge 모드이면 컨테이너의 `127.0.0.1`은 호스트가 아닙니다. 호스트 사설 IP로 전달한다면 ModuDock도 그 IP에서 수신해야 합니다. 아래 사설 IP와 도메인을 실제 값으로 바꾸어 `sudo systemctl edit modudock.service`에 저장합니다.
+프록시가 호스트 프로세스라면 loopback upstream을 사용할 수 있습니다. 프록시가 Docker bridge 모드이면 컨테이너의 `127.0.0.1`은 호스트가 아닙니다. 호스트 사설 IP로 전달한다면 ModuDock도 그 IP에서 수신해야 합니다. 신규 설치는 config의 listen/public_url을 수정합니다. 아래 예시는 기존 CLI 방식 unit을 유지하는 설치에만 해당하며 사설 IP와 도메인을 실제 값으로 바꾸어 `sudo systemctl edit modudock.service`에 저장합니다.
 
 ```ini
 [Service]
@@ -132,24 +159,26 @@ DSM 설치 경로입니다.
 
 ```text
 /volume1/modudock/bin/modudock
+/volume1/modudock/config/config.yaml
 /volume1/modudock/data/
+/volume1/modudock/logs/
 /volume1/modudock/backups/
 /volume1/modudock/share/
 /etc/systemd/system/modudock.service
 ```
 
-`/volume1`은 실제로 마운트된 로컬 btrfs/ext4 볼륨이어야 합니다. `/volume2` 등 다른 볼륨은 다음처럼 지정하며 업데이트에도 같은 볼륨을 사용합니다.
+`/volume1`은 실제로 마운트된 로컬 btrfs/ext4 볼륨이어야 합니다. 신규 설치에서 전용 루트 경로를 질문하며 기본값은 `/volume1/modudock`입니다. 공백·특수문자·상위 경로 이동·심볼릭 링크·네트워크 마운트는 거부합니다. 기존 부모 디렉터리도 root 소유이며 그룹·다른 사용자 쓰기 금지여야 합니다. 다른 루트는 다음처럼 지정하고 업데이트에도 같은 경로를 사용합니다. 기존 `MODUDOCK_DSM_VOLUME=/volume2`도 `/volume2/modudock`으로 호환합니다.
 
 ```sh
 curl -fsSLo install.sh https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh
-sudo env MODUDOCK_DSM_VOLUME=/volume2 bash install.sh
+sudo env MODUDOCK_DSM_ROOT=/volume2/modudock bash install.sh
 ```
 
 DSM에서는 getent/useradd/runuser를 요구하지 않고 id·synogroup·su·systemctl을 사용합니다. 루트 설치 폴더는 root 소유, 데이터는 modudock 소유로 분리합니다. 기존 서비스 파일과 drop-in은 보존하고 데이터 전체와 MFA auth.key를 같은 볼륨의 backups에 저장합니다. 기존 Docker 볼륨은 수정하거나 자동으로 이전하지 않습니다.
 
-기본 수신은 `127.0.0.1:7438`입니다. 기존 Docker가 7438을 사용 중이면 먼저 중지하거나 신규 서비스의 포트를 별도로 정해야 합니다. DSM 프록시 구성에 맞춰 위 systemd override를 적용하되 실행파일·데이터 경로는 DSM 경로로 바꿉니다. 예를 들어 ExecStart는 `/volume1/modudock/bin/modudock serve --data-dir /volume1/modudock/data --listen 192.168.1.100:7438 --public-url https://실제도메인`입니다.
+기본 수신은 `127.0.0.1:7438`입니다. 기존 Docker가 7438을 사용 중이면 신규 질문에서 다른 포트를 선택합니다. 서비스는 `/volume1/modudock/bin/modudock serve --config /volume1/modudock/config/config.yaml`로 시작합니다. config와 binary는 root 소유, data/logs는 서비스 쓰기 권한을 가지며 systemd/logrotate 등록은 `/etc`에 둡니다. 기존 수동 unit/drop-in은 유지합니다.
 
-이번 변경은 설치 스크립트에만 적용되므로 기존 v0.1.0 실행파일을 사용합니다. v0.1.0 아카이브 안의 install.sh는 이전본이므로 DSM에서는 최신 main의 스크립트를 사용하세요. 실제 서비스 기동·접근 권한·재부팅 자동 시작 및 DSM 대규모 업데이트 후 서비스 유지를 확인해야 합니다. 플러그인은 서비스 계정과 같은 권한으로 실행하는 신뢰 코드이며 악성 플러그인 격리는 제공하지 않습니다.
+신규 YAML 설치에는 설정 명령을 지원하는 v0.2.0 이상 릴리스가 필요합니다. 실제 서비스 기동·접근 권한·재부팅 자동 시작 및 DSM 대규모 업데이트 후 서비스 유지를 확인해야 합니다. 플러그인은 서비스 계정과 같은 권한으로 실행하는 신뢰 코드이며 악성 플러그인 격리는 제공하지 않습니다.
 
 ## 백업과 복원
 

@@ -9,22 +9,31 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 DSM_VERSION_FILE="$test_root/VERSION"
 MOUNTS_FILE="$test_root/mounts"
 GROUP_FILE="$test_root/group"
+MODUDOCK_DSM_ROOT=/volume1/modudock
 printf 'majorversion="7"\nos_name="DSM"\n' > "$DSM_VERSION_FILE"
 printf '/dev/test /volume1 btrfs rw 0 0\n' > "$MOUNTS_FILE"
 printf 'modudock:x:1234:\n' > "$GROUP_FILE"
 [[ $(detect_platform) == dsm ]] || fail 'DSM was not detected'
 configure_platform
 [[ "$PLATFORM" == dsm && "$INSTALL_DIR" == /volume1/modudock/bin && "$DATA_DIR" == /volume1/modudock/data && "$BACKUP_DIR" == /volume1/modudock/backups ]] || fail 'DSM persistent paths incorrect'
-if (MODUDOCK_DSM_VOLUME=/tmp/unmounted; configure_platform) >/dev/null 2>&1; then fail 'non-volume root accepted'; fi
-if (MODUDOCK_DSM_VOLUME=/volume2; configure_platform) >/dev/null 2>&1; then fail 'unmounted volume accepted'; fi
+[[ "$CONFIG_FILE" == /volume1/modudock/config/config.yaml && "$LOG_DIR" == /volume1/modudock/logs ]] || fail 'DSM config/log paths incorrect'
+(MODUDOCK_DSM_ROOT=/volume1/apps/modudock; configure_platform; [[ "$NATIVE_ROOT" == /volume1/apps/modudock ]]) || fail 'custom DSM root ignored'
+for root in /tmp/modudock /volume1/../other /volume1/modudock%name '/volume1/modudock space'; do
+ if (MODUDOCK_DSM_ROOT="$root"; configure_platform) >/dev/null 2>&1; then fail "unsafe DSM root accepted: $root"; fi
+done
+printf 'server:/share /volume1/modudock/data nfs rw 0 0\n' >> "$MOUNTS_FILE"
+if (configure_platform) >/dev/null 2>&1; then fail 'nested network data mount accepted'; fi
+printf '/dev/test /volume1 btrfs rw 0 0\n' > "$MOUNTS_FILE"
+if (unset MODUDOCK_DSM_ROOT; MODUDOCK_DSM_VOLUME=/tmp/unmounted; configure_platform) >/dev/null 2>&1; then fail 'non-volume root accepted'; fi
+if (unset MODUDOCK_DSM_ROOT; MODUDOCK_DSM_VOLUME=/volume2; configure_platform) >/dev/null 2>&1; then fail 'unmounted volume accepted'; fi
 printf 'server:/share /volume2 nfs rw 0 0\n' >> "$MOUNTS_FILE"
-if (MODUDOCK_DSM_VOLUME=/volume2; configure_platform) >/dev/null 2>&1; then fail 'network volume accepted for SQLite'; fi
+if (unset MODUDOCK_DSM_ROOT; MODUDOCK_DSM_VOLUME=/volume2; configure_platform) >/dev/null 2>&1; then fail 'network volume accepted for SQLite'; fi
 
 WORK_DIR="$test_root/work"
 mkdir -p "$WORK_DIR"
 cp packaging/modudock.service "$WORK_DIR/modudock.service"
 prepare_service_unit
-grep -q '^ExecStart=/volume1/modudock/bin/modudock serve --data-dir /volume1/modudock/data --listen 127.0.0.1:7438$' "$WORK_DIR/modudock.service" || fail 'DSM ExecStart incorrect'
+grep -q '^ExecStart=/volume1/modudock/bin/modudock serve --config /volume1/modudock/config/config.yaml$' "$WORK_DIR/modudock.service" || fail 'DSM ExecStart incorrect'
 grep -q '^ReadWritePaths=/volume1/modudock/data$' "$WORK_DIR/modudock.service" || fail 'DSM writable path missing'
 grep -q '^RequiresMountsFor=/volume1$' "$WORK_DIR/modudock.service" || fail 'volume dependency missing'
 if grep -q '^StateDirectory' "$WORK_DIR/modudock.service"; then fail 'Linux state directory leaked into DSM unit'; fi

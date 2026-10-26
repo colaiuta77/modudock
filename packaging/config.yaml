@@ -1,0 +1,5 @@
+# 네이티브 서비스의 데이터와 접속 주소 및 선택적 운영 로그 경로를 설정한다.
+data_dir: /var/lib/modudock
+listen: 127.0.0.1:7438
+public_url: ""
+log_file: ""

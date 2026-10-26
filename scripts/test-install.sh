@@ -9,10 +9,13 @@ test_root=$(mktemp -d /tmp/modudock-install-test.XXXXXX)
 trap 'case "$test_root" in /tmp/modudock-install-test.*) rm -rf -- "$test_root";; esac' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 unset MODUDOCK_VERSION MODUDOCK_HEALTH_URL || true
+MODUDOCK_LISTEN=127.0.0.1:7438
+MODUDOCK_PUBLIC_URL=''
+MODUDOCK_DSM_ROOT=/volume1/modudock
 
 fixture="$test_root/fixture"
 mkdir -p "$fixture/packaging"
-printf '#!/bin/bash\nexit 0\n' > "$fixture/modudock-linux-amd64"
+cp scripts/fixtures/modudock-release.sh "$fixture/modudock-linux-amd64"
 printf 'new license\n' > "$fixture/LICENSE"
 printf 'new notices\n' > "$fixture/third-party-notices.txt"
 cp packaging/modudock.service "$fixture/packaging/"
@@ -70,7 +73,10 @@ systemctl() {
     [[ ${failed_property:-} != "$property" ]] || return 1
     case "$property" in
       Version) echo 'Version=219';;
-      ExecStart) printf 'ExecStart={ path=%s/modudock ; argv[]=%s/modudock serve --data-dir=%s --listen=127.0.0.1:7438 --public-url=https://panel.example.test ; ignore_errors=no ; }\n' "$INSTALL_DIR" "$INSTALL_DIR" "${effective_data:-$DATA_DIR}";;
+      ExecStart)
+        if [[ -n ${effective_config:-} ]]; then
+          printf 'ExecStart={ path=%s/modudock ; argv[]=%s/modudock serve --config=%s %s ; ignore_errors=no ; }\n' "$INSTALL_DIR" "$INSTALL_DIR" "$effective_config" "${effective_flags:-}"
+        else printf 'ExecStart={ path=%s/modudock ; argv[]=%s/modudock serve --data-dir=%s --listen=%s --public-url=https://panel.example.test ; ignore_errors=no ; }\n' "$INSTALL_DIR" "$INSTALL_DIR" "${effective_data:-$DATA_DIR}" "${effective_listen:-127.0.0.1:7438}"; fi;;
       User|Group) printf '%s=modudock\n' "$property";;
       LoadState) if [[ -f "$UNIT_FILE" ]]; then echo 'LoadState=loaded'; else echo 'LoadState=not-found'; fi;;
       RootDirectory) printf 'RootDirectory=%s\n' "${effective_root:-}";;
@@ -81,6 +87,7 @@ systemctl() {
 }
 sleep() { :; }
 prompt_admin() { ADMIN_USERNAME=admin; ADMIN_PASSWORD='fixture-password-1234'; echo prompted >> "$events"; }
+rotation_available() { [[ ${rotation_enabled:-1} == 1 ]]; }
 
 new_case() {
   case_root="$test_root/$1"
@@ -90,12 +97,32 @@ new_case() {
   UNIT_FILE="$case_root/systemd/modudock.service"
   SHARE_DIR="$case_root/share"
   BACKUP_DIR="$case_root/backups"
+  CONFIG_FILE="$case_root/config/config.yaml"
+  LOG_DIR="$case_root/logs"
+  LOGROTATE_FILE="$case_root/logrotate/modudock"
   LOCK_FILE="$case_root/lock/install.lock"
   events="$case_root/events"
   : > "$events"
-  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''
+  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''; effective_config=''; effective_flags=''; effective_listen=''; rotation_enabled=1
 }
 run_install() { (main "$@") > "$case_root/output" 2>&1; }
+
+new_case network-validation
+for value in 'https://example.test/path' 'https://user@example.test' 'https://example.test?' 'https://example.test#' 'https://example.test/' 'https://example.test:99999' 'https://example.test/%n' 'http://bad host'; do
+ if (PUBLIC_URL="$value"; validate_network) >/dev/null 2>&1; then fail "invalid public URL accepted: $value"; fi
+done
+for value in '127.0.0.1:0' '127.0.0.1:65536' 'bad address' '127.0.0.1:7438%n'; do
+ if (LISTEN="$value"; PUBLIC_URL=''; validate_network) >/dev/null 2>&1; then fail "invalid listen accepted: $value"; fi
+done
+LISTEN=192.168.1.50:7440; PUBLIC_URL=https://panel.example.test
+validate_network
+[[ $(listener_health_url) == http://192.168.1.50:7440 ]] || fail 'specific-IP health target incorrect'
+LISTEN=0.0.0.0:7441
+[[ $(listener_health_url) == http://127.0.0.1:7441 ]] || fail 'wildcard health target incorrect'
+ip() { printf '2: docker0    inet 172.17.0.1/16 scope global docker0\n3: vethdeadbeef    inet 172.18.0.1/16 scope global vethdeadbeef\n4: br-abcdef    inet 172.19.0.1/16 scope global br-abcdef\n5: br0    inet 192.168.1.50/24 scope global br0\n'; }
+[[ $(detect_ipv4) == 192.168.1.50 ]] || fail 'Docker candidate accepted or DSM bridge rejected'
+unset -f ip
+LISTEN=127.0.0.1:7438; PUBLIC_URL=''
 
 [[ $(detect_arch x86_64) == amd64 ]] || fail amd64
 [[ $(detect_arch aarch64) == arm64 ]] || fail arm64
@@ -111,6 +138,12 @@ grep -q '^prompted$' "$events" || fail 'fresh administrator was not requested'
 grep -q '^enable modudock$' "$events" || fail 'service not enabled'
 grep -q '^start modudock$' "$events" || fail 'service not started'
 [[ -f "$SHARE_DIR/LICENSE" ]] || fail 'license missing'
+[[ -f "$CONFIG_FILE" ]] || fail 'YAML config missing'
+[[ $(stat -c %a "$CONFIG_FILE") == 640 && $(stat -c %a "${CONFIG_FILE%/*}") == 750 ]] || fail 'config permissions are not read-only for service'
+grep -q "^$LOG_DIR/service.log {" "$LOGROTATE_FILE" || fail 'operational rotation rule missing'
+if grep -q core.jsonl "$LOGROTATE_FILE"; then fail 'UI log is double-rotated'; fi
+grep -q "^ExecStart=$INSTALL_DIR/modudock serve --config $CONFIG_FILE$" "$UNIT_FILE" || fail 'fresh service does not use config'
+grep -q '^listen: "127.0.0.1:7438"$' "$CONFIG_FILE" || fail 'fresh default not loopback'
 if grep -q fixture-password "$case_root/output" "$events"; then fail 'administrator password was logged'; fi
 
 if ! (exec 3<>/dev/tty) 2>/dev/null; then
@@ -134,6 +167,59 @@ backup=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
 [[ $(cat "$backup/data/core.db") == database && $(cat "$backup/data/auth.key") == key && $(cat "$backup/data/plugins/data") == plugin ]] || fail 'full data backup missing'
 grep -q old "$backup/modudock" || fail 'old binary not backed up'
 if grep -q '^prompted$' "$events"; then fail 'update requested a new administrator'; fi
+
+new_case configured-upgrade
+mkdir -p "$DATA_DIR" "${CONFIG_FILE%/*}"
+printf database > "$DATA_DIR/core.db"
+printf 'data_dir: "%s"\nlisten: "192.168.1.50:7442"\npublic_url: "https://panel.example.test"\n' "$DATA_DIR" > "$CONFIG_FILE"
+cp "$CONFIG_FILE" "$case_root/original-config"
+printf custom-config-unit > "$UNIT_FILE"
+effective_config=$CONFIG_FILE
+effective_flags='--listen 192.168.1.51:7443'
+active=1
+run_install || { cat "$case_root/output"; fail 'config upgrade'; }
+cmp "$CONFIG_FILE" "$case_root/original-config" || fail 'existing config overwritten'
+[[ $(cat "$UNIT_FILE") == custom-config-unit ]] || fail 'config unit overwritten'
+backup=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
+cmp "$backup/config.yaml" "$CONFIG_FILE" || fail 'config backup missing'
+grep -q 'healthcheck --url http://192.168.1.51:7443' "$events" || fail 'config/CLI listener health target ignored'
+if grep -q '^prompted$' "$events"; then fail 'config update prompted for administrator'; fi
+
+new_case configured-missing-data
+mkdir -p "${CONFIG_FILE%/*}"
+printf 'data_dir: "%s"\n' "$DATA_DIR" > "$CONFIG_FILE"
+printf existing > "$UNIT_FILE"; printf old > "$INSTALL_DIR/modudock"
+effective_config=$CONFIG_FILE
+if run_install; then fail 'missing configured DB accepted'; fi
+[[ ! -d "$DATA_DIR" && $(cat "$INSTALL_DIR/modudock") == old ]] || fail 'missing DB update changed installation'
+if grep -q '^stop ' "$events"; then fail 'missing DB update stopped service'; fi
+
+new_case explicit-network
+MODUDOCK_LISTEN=192.168.1.50:7450 MODUDOCK_PUBLIC_URL=https://panel.example.test run_install || { cat "$case_root/output"; fail 'explicit network'; }
+grep -q '^listen: "192.168.1.50:7450"$' "$CONFIG_FILE" || fail 'explicit listener missing'
+grep -q 'healthcheck --url http://192.168.1.50:7450' "$events" || fail 'healthcheck used public URL or loopback'
+grep -q 'Access: https://panel.example.test' "$case_root/output" || fail 'HTTPS access hint missing'
+
+new_case explicit-health
+MODUDOCK_LISTEN=0.0.0.0:7450 MODUDOCK_HEALTH_URL=http://127.0.0.1:9999 run_install || { cat "$case_root/output"; fail 'explicit health'; }
+grep -q 'healthcheck --url http://127.0.0.1:9999' "$events" || fail 'explicit health URL ignored'
+
+new_case no-rotation
+rotation_enabled=0
+run_install || { cat "$case_root/output"; fail 'no-rotation install'; }
+grep -q '^log_file: ""$' "$CONFIG_FILE" || fail 'unrotated file logging enabled'
+[[ -f "$LOGROTATE_FILE" && ! -f "$LOG_DIR/service.log" ]] || fail 'inactive rotation rule missing or unrotated log created'
+
+new_case old-config-binary
+printf '#!/bin/bash\nexit 0\n' > "$fixture/modudock-linux-amd64"
+tar -czf "$test_root/modudock-linux-amd64.tar.gz" -C "$fixture" .
+(cd "$test_root" && sha256sum modudock-linux-amd64.tar.gz > SHA256SUMS)
+if run_install; then fail 'old binary accepted for YAML installation'; fi
+[[ ! -e "$DATA_DIR" && ! -e "$CONFIG_FILE" && ! -e "$INSTALL_DIR/modudock" ]] || fail 'old-binary rejection changed installation'
+if grep -q '^stop ' "$events"; then fail 'old-binary rejection stopped service'; fi
+cp scripts/fixtures/modudock-release.sh "$fixture/modudock-linux-amd64"
+tar -czf "$test_root/modudock-linux-amd64.tar.gz" -C "$fixture" .
+(cd "$test_root" && sha256sum modudock-linux-amd64.tar.gz > SHA256SUMS)
 
 new_case unavailable-systemd
 failed_property=Version
@@ -231,8 +317,10 @@ eval "$(declare -f configure_platform | sed '1s/configure_platform/configure_pla
 configure_platform() {
   configure_platform_real
   NATIVE_ROOT="$case_root/native"
+  DSM_VOLUME="$case_root"
   INSTALL_DIR="$NATIVE_ROOT/bin"; DATA_DIR="$NATIVE_ROOT/data"
   SHARE_DIR="$NATIVE_ROOT/share"; BACKUP_DIR="$NATIVE_ROOT/backups"
+  CONFIG_FILE="$NATIVE_ROOT/config/config.yaml"; LOG_DIR="$NATIVE_ROOT/logs"
 }
 DSM_VERSION_FILE="$test_root/DSM_VERSION"
 MOUNTS_FILE="$test_root/mounts"
@@ -261,7 +349,7 @@ stat() {
 new_case dsm-fresh
 run_install || { cat "$case_root/output"; fail 'DSM fresh install'; }
 [[ -x "$case_root/native/bin/modudock" && -d "$case_root/native/data" ]] || fail 'DSM files not installed to native volume root'
-grep -q "^ReadWritePaths=$case_root/native/data$" "$UNIT_FILE" || fail 'DSM unit is not writable in the data directory'
+grep -Eq "^ReadWritePaths=$case_root/native/data( |$)" "$UNIT_FILE" || fail 'DSM unit is not writable in the data directory'
 
 new_case dsm-upgrade
 mkdir -p "$case_root/native/bin" "$case_root/native/data/plugins"
