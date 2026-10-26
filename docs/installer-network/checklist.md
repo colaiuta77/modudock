@@ -6,6 +6,6 @@
 - [x] Linux/DSM 설치 경로 및 설정 보존 구현.
 - [x] 리스닝 선택·public-url·health·기존 설정 보존 회귀 테스트 RED.
 - [x] 최소 구현과 설치 문서 갱신.
-- [ ] Bash·Go 테스트와 독립 리뷰 통과.
+- [x] Bash·Go 테스트와 독립 리뷰 통과. 17aafce 기준 Critical/Important 없음.
 - [ ] 커밋·main 게시·CI 확인.
 - [ ] v0.2.0 릴리스·자산 검증.

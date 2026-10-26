@@ -15,4 +15,5 @@
 - Task 1 검증. 전체 `go test ./... -count=1` 통과. WSL에서 Bash 구문 검사와 scripts/test-install.sh·scripts/test-install-dsm.sh 모두 통과했다. 새 config 설치, config/CLI override 보존, 백업, health override, 회전 부재 시 파일 로그 비활성, 구버전 binary 거부, Docker hex 인터페이스 제외를 확인했다.
 - logrotate 규칙은 신규 설치에 항상 준비하되 실행파일과 활성 logrotate.timer가 모두 확인된 경우에만 별도 service.log를 활성화한다. cron 스크립트 존재는 예약 실행을 보장하지 않아 자동 감지하지 않는다. timer 부재는 명확히 안내하고 core.jsonl 자체 회전과 journal을 유지한다. 수동 cron 구성과 copytruncate 손실 가능성·크기 확인 주기 제한은 설치 문서에 기록했다.
 - 완료 안내는 Version·Access·Binary·Config·Data·로그·systemctl 명령을 줄별로 출력한다. legacy CLI 설치는 없는 config 경로 대신 기존 systemd 인자 보존을 표시한다. 기존 unit/drop-in/config는 자동 변환하지 않는다.
+- 17aafce까지 독립 검토에서 지적한 timer 확인과 DSM bin 중첩 마운트 검사를 보완했으며 재검토 승인받았다. 전체 Go tests/vet, Linux·DSM Bash tests, 프론트 48 tests, 내장 UI 빌드 및 기존/설정 기반 실제 binary smoke가 통과했다. 로컬 Docker 엔진은 비활성이라 이미지와 Linux race/취약점 검사는 GitHub CI에서 확인한다.
 - 독립 검토 후속 수정. 실제 rotation_available을 유지하고 command/systemctl 경계만 대역한 테스트로 inactive timer의 잘못된 허용을 RED로 확인했다. DSM bin NFS/tmpfs 마운트 거부 테스트도 추가하여 INSTALL_DIR 검증 누락을 재현했다. 제품 변경은 활성 timer 확인과 DSM 검증 대상 경로 추가로 제한한다.
