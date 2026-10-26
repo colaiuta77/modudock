@@ -5,6 +5,11 @@ cd "$(dirname "$0")/.."
 [[ -f scripts/install.sh ]] || { echo 'FAIL: scripts/install.sh is missing' >&2; exit 1; }
 source scripts/install.sh
 original_prompt=$(declare -f prompt_admin)
+mktemp() {
+  if [[ -n ${MODUDOCK_TEST_NOEXEC_TMP:-} && ${@: -1} == /tmp/modudock-install.XXXXXX ]]; then
+    command mktemp -d "$MODUDOCK_TEST_NOEXEC_TMP/modudock-install.XXXXXX"
+  else command mktemp "$@"; fi
+}
 test_root=$(mktemp -d /tmp/modudock-install-test.XXXXXX)
 trap 'case "$test_root" in /tmp/modudock-install-test.*) rm -rf -- "$test_root";; esac' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -43,6 +48,9 @@ id() { if [[ "$*" == '-u modudock' ]]; then echo 999; elif [[ ${1:-} == -u && $#
 getent() { if [[ $1 == passwd ]]; then echo 'modudock:x:999:999::/var/lib/modudock:/usr/sbin/nologin'; else command getent "$@"; fi; }
 useradd() { echo useradd >> "$events"; }
 chown() { :; }
+stat() {
+  if [[ "$*" == "-c %u $INSTALL_DIR" ]]; then echo "${staging_owner:-0}"; else command stat "$@"; fi
+}
 cp() {
   if [[ ${backup_failure:-0} == 1 && "$*" == *"$DATA_DIR"* ]]; then return 28; fi
   command cp "$@"
@@ -108,7 +116,7 @@ new_case() {
   LOCK_FILE="$case_root/lock/install.lock"
   events="$case_root/events"
   : > "$events"
-  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''; effective_config=''; effective_flags=''; effective_listen=''; rotation_enabled=1; logrotate_installed=1
+  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''; effective_config=''; effective_flags=''; effective_listen=''; rotation_enabled=1; logrotate_installed=1; staging_owner=0
 }
 run_install() { (main "$@") > "$case_root/output" 2>&1; }
 
@@ -152,6 +160,7 @@ grep -q '^enable modudock$' "$events" || fail 'service not enabled'
 grep -q '^start modudock$' "$events" || fail 'service not started'
 [[ -f "$SHARE_DIR/LICENSE" ]] || fail 'license missing'
 [[ -f "$CONFIG_FILE" ]] || fail 'YAML config missing'
+[[ -z $(find "$INSTALL_DIR" -maxdepth 1 -name '.modudock-install.*' -print) ]] || fail 'successful install leaked staging directory'
 [[ $(stat -c %a "$CONFIG_FILE") == 640 && $(stat -c %a "${CONFIG_FILE%/*}") == 750 ]] || fail 'config permissions are not read-only for service'
 grep -q "^$LOG_DIR/service.log {" "$LOGROTATE_FILE" || fail 'operational rotation rule missing'
 if grep -q core.jsonl "$LOGROTATE_FILE"; then fail 'UI log is double-rotated'; fi
@@ -264,7 +273,17 @@ for failure in bad_hash download_failure; do
   declare "$failure=1"
   if run_install; then fail "$failure accepted"; fi
   [[ $(cat "$INSTALL_DIR/modudock") == old ]] || fail 'failed download replaced binary'
+  [[ -z $(find "$INSTALL_DIR" -maxdepth 1 -name '.modudock-install.*' -print) ]] || fail 'failed install leaked staging directory'
   if grep -q '^stop ' "$events"; then fail 'failed download stopped service'; fi
+done
+
+for unsafe in owner mode; do
+  new_case "unsafe-staging-$unsafe"
+  printf old > "$INSTALL_DIR/modudock"
+  if [[ "$unsafe" == owner ]]; then staging_owner=1001; else chmod 777 "$INSTALL_DIR"; fi
+  if run_install; then fail "unsafe staging $unsafe accepted"; fi
+  [[ $(cat "$INSTALL_DIR/modudock") == old ]] || fail 'unsafe staging changed binary'
+  if grep -q '^stop ' "$events"; then fail 'unsafe staging stopped service'; fi
 done
 
 new_case symlink
@@ -357,7 +376,7 @@ su() {
   if [[ "$6" == 'id -u '* ]]; then echo 999; else bash -c "$6"; fi
 }
 stat() {
-  if [[ "$*" == "-c %u $case_root/native" ]]; then echo 0; else command stat "$@"; fi
+  if [[ "$*" == "-c %u $case_root/native" || "$*" == "-c %u $INSTALL_DIR" ]]; then echo 0; else command stat "$@"; fi
 }
 new_case dsm-fresh
 run_install || { cat "$case_root/output"; fail 'DSM fresh install'; }

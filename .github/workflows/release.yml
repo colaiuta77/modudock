@@ -30,6 +30,7 @@ jobs:
       - run: go test -race ./...
       - run: go vet ./...
       - run: bash -n scripts/install.sh scripts/test-install.sh scripts/test-install-dsm.sh scripts/test-uninstall.sh && bash scripts/test-install.sh && bash scripts/test-install-dsm.sh && bash scripts/test-uninstall.sh
+      - run: sudo bash scripts/test-install-noexec.sh
       - run: npm ci && npm test && npm audit --audit-level=high
         working-directory: frontend
       - run: sh scripts/build.sh

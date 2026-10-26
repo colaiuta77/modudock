@@ -134,9 +134,18 @@ write_config() {
   printf 'data_dir: "%s"\nlisten: "%s"\npublic_url: "%s"\nlog_file: "%s"\n' "$DATA_DIR" "$LISTEN" "$PUBLIC_URL" "$LOG_FILE" > "$WORK_DIR/config.yaml"
 }
 check_candidate_config() {
-  chmod 0700 "$CANDIDATE"
-  printf 'data_dir: /modudock-config-capability-probe\n' > "$WORK_DIR/probe.yaml"
-  [[ $("$CANDIDATE" config check --config "$WORK_DIR/probe.yaml" --field data_dir) == /modudock-config-capability-probe ]] || die 'Downloaded binary lacks YAML config support. Select a config-capable release (v0.2.0 or newer); installation unchanged.'
+  local output status
+  chmod 0700 "$CANDIDATE" || die 'Cannot set candidate executable permissions.'
+  printf 'data_dir: /modudock-config-capability-probe\n' > "$WORK_DIR/probe.yaml" || die 'Cannot write candidate validation config.'
+  if output=$("$CANDIDATE" config check --config "$WORK_DIR/probe.yaml" --field data_dir); then
+    [[ "$output" == /modudock-config-capability-probe ]] || die 'Downloaded binary lacks YAML config support. Select a config-capable release (v0.2.0 or newer); running installation unchanged.'
+  else
+    status=$?
+    if [[ "$status" == 126 || "$status" == 127 ]]; then
+      die "Cannot execute candidate $CANDIDATE (exit $status). Check noexec mounts, permissions or the binary loader; running installation unchanged."
+    fi
+    die "Candidate config check failed (exit $status). Inspect the error above and use v0.2.0 or newer; running installation unchanged."
+  fi
 }
 rotation_available() {
   command -v logrotate >/dev/null && systemctl is-active --quiet logrotate.timer
@@ -241,6 +250,20 @@ prepare_native_root() {
   else
     install -d -m 0755 -o root -g root "$NATIVE_ROOT"
   fi
+}
+prepare_work_dir() {
+  prepare_native_root
+  reject_symlink_parents "$INSTALL_DIR"
+  if [[ -e "$INSTALL_DIR" ]]; then
+    [[ -d "$INSTALL_DIR" && $(stat -c %u "$INSTALL_DIR") == 0 ]] || die 'Executable staging parent must be a root-owned directory.'
+    local mode
+    mode=$(stat -c %a "$INSTALL_DIR") || die 'Cannot inspect executable staging directory permissions.'
+    (( (8#$mode & 0022) == 0 )) || die 'Executable staging parent must not be writable by group or others.'
+  else
+    install -d -m 0755 -o root -g root "$INSTALL_DIR"
+  fi
+  # NAS의 /tmp noexec를 해제하지 않고 최종 실행파일과 같은 파일시스템에서 검사한다.
+  WORK_DIR=$(mktemp -d "$INSTALL_DIR/.modudock-install.XXXXXX")
 }
 https() {
   curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --connect-timeout 15 --max-time 300 "$@"
@@ -403,7 +426,8 @@ cleanup() {
   release_data_lock
   unset ADMIN_PASSWORD
   case "$STAGED_BINARY" in "$INSTALL_DIR"/.modudock.new.*) rm -f -- "$STAGED_BINARY";; esac
-  case "$WORK_DIR" in /tmp/modudock-install.*) rm -rf -- "$WORK_DIR";; esac
+  case "$WORK_DIR" in "$INSTALL_DIR"/.modudock-install.*)
+    [[ ${WORK_DIR#"$INSTALL_DIR"/} == */* ]] || rm -rf -- "$WORK_DIR";; esac
   if ((status != 0)) && [[ -n "$BACKUP_PATH" ]]; then
     log "Installation failed. Preserve $BACKUP_PATH. Stop modudock and restore the old binary AND full data directory together if rollback is needed."
     log 'Inspect: systemctl status modudock; journalctl -u modudock -n 100'
@@ -494,11 +518,11 @@ main() {
   [[ $(id -u) == 0 ]] || die 'Run as root, for example curl ... | sudo bash.'
   local command arch version load_state new_install=0 account_exists=0
   configure_platform
-  for command in curl tar sha256sum awk uname mktemp install cp mv chmod chown flock systemctl cut date sleep grep id; do
+  for command in curl tar sha256sum awk uname mktemp install cp mv chmod chown flock systemctl cut date sleep grep id stat; do
     command -v "$command" >/dev/null || die "Required command is missing: $command"
   done
   if [[ "$PLATFORM" == dsm ]]; then
-    for command in synogroup su stat; do command -v "$command" >/dev/null || die "Required DSM command is missing: $command"; done
+    for command in synogroup su; do command -v "$command" >/dev/null || die "Required DSM command is missing: $command"; done
     validate_service_account
   else
     for command in getent useradd runuser; do command -v "$command" >/dev/null || die "Required command is missing: $command"; done
@@ -507,7 +531,7 @@ main() {
   arch=$(detect_arch "$(uname -m)")
   validate_paths
   prepare_install_lock
-  WORK_DIR=$(mktemp -d /tmp/modudock-install.XXXXXX)
+  prepare_work_dir
   trap cleanup EXIT
   version=$(release_version)
   download_release "$version" "$arch"
@@ -529,7 +553,7 @@ main() {
   show_installation "$version"
   if ((new_install)); then prompt_admin; fi
   if service_account_exists; then account_exists=1; validate_service_account; fi
-  if [[ "$PLATFORM" == dsm ]]; then ensure_dsm_group; verify_service_execution; prepare_native_root; fi
+  if [[ "$PLATFORM" == dsm ]]; then ensure_dsm_group; verify_service_execution; fi
   prepare_service_unit
   [[ ! -d "$DATA_DIR" || $account_exists == 1 ]] || die 'Existing data has no modudock service account; migrate it manually before updating.'
   if systemctl is-active --quiet modudock; then systemctl stop modudock || die 'Could not stop the existing service.'; fi
