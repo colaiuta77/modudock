@@ -37,7 +37,7 @@ curl() {
   fi
 }
 check_systemd() { :; }
-id() { if [[ ${1:-} == -u && $# == 1 ]]; then echo 0; else command id "$@"; fi; }
+id() { if [[ "$*" == '-u modudock' ]]; then echo 999; elif [[ ${1:-} == -u && $# == 1 ]]; then echo 0; else command id "$@"; fi; }
 getent() { if [[ $1 == passwd ]]; then echo 'modudock:x:999:999::/var/lib/modudock:/usr/sbin/nologin'; else command getent "$@"; fi; }
 useradd() { echo useradd >> "$events"; }
 chown() { :; }
@@ -54,6 +54,7 @@ install() {
 }
 runuser() {
   echo "runuser $*" >> "$events"
+  if [[ ${4:-} == id && ${5:-} == -u ]]; then echo 999; return; fi
   if [[ ${4:-} == bash ]]; then shift 3; "$@"; return; fi
   [[ ${health_failure:-0} == 0 ]]
 }
@@ -139,6 +140,13 @@ ln -s "$test_root/elsewhere" "$DATA_DIR"
 if run_install; then fail 'data symlink accepted'; fi
 [[ ! -e "$test_root/elsewhere" ]] || fail 'symlink destination modified'
 
+new_case lock-parent-link
+rmdir "$case_root/lock"
+mkdir "$case_root/elsewhere"
+ln -s "$case_root/elsewhere" "$case_root/lock"
+if run_install; then fail 'symbolic-link lock directory accepted'; fi
+[[ ! -e "$case_root/elsewhere/install.lock" ]] || fail 'lock directory escape created a file'
+
 new_case swapped-lock
 mkdir -p "$DATA_DIR"; printf existing > "$DATA_DIR/core.db"
 printf old > "$INSTALL_DIR/modudock"
@@ -184,3 +192,72 @@ active=1; health_failure=1
 if run_install; then fail 'health failure reported success'; fi
 [[ -f "$DATA_DIR/core.db" ]] || fail 'health failure deleted data'
 echo 'PASS native installer: architectures, version pinning, fresh install, no-terminal failure, password privacy, preserved service, full backup, hash/download/backup failures, data lock, symlink rejection, startup/health failures.'
+
+# DSM에서는 일반 배포판의 계정·권한 도구를 호출하지 않는지 전체 흐름으로 확인한다.
+eval "$(declare -f configure_platform | sed '1s/configure_platform/configure_platform_real/')"
+configure_platform() {
+  configure_platform_real
+  NATIVE_ROOT="$case_root/native"
+  INSTALL_DIR="$NATIVE_ROOT/bin"; DATA_DIR="$NATIVE_ROOT/data"
+  SHARE_DIR="$NATIVE_ROOT/share"; BACKUP_DIR="$NATIVE_ROOT/backups"
+}
+DSM_VERSION_FILE="$test_root/DSM_VERSION"
+MOUNTS_FILE="$test_root/mounts"
+GROUP_FILE="$test_root/group"
+printf 'majorversion="7"\nos_name="DSM"\n' > "$DSM_VERSION_FILE"
+printf '/dev/test /volume1 btrfs rw 0 0\n' > "$MOUNTS_FILE"
+printf 'modudock:x:1234:\n' > "$GROUP_FILE"
+id() {
+  case "$*" in
+    '-u') echo 0;; '-u modudock') if [[ ${missing_dsm_user:-0} == 0 ]]; then echo 999; else return 1; fi;;
+    '-Gn modudock') echo 'users modudock';; *) command id "$@";;
+  esac
+}
+getent() { fail 'DSM called getent'; }
+useradd() { fail 'DSM called useradd'; }
+runuser() { fail 'DSM called runuser'; }
+synogroup() { fail 'existing DSM group was changed'; }
+su() {
+  [[ "$1" == -s && "$3" == -g && "$4" == modudock && "$5" == -c && "$7" == modudock ]] || fail 'invalid DSM su arguments'
+  [[ ${su_failure:-0} == 0 ]] || return 1
+  if [[ "$6" == 'id -u '* ]]; then echo 999; else bash -c "$6"; fi
+}
+stat() {
+  if [[ "$*" == "-c %u $case_root/native" ]]; then echo 0; else command stat "$@"; fi
+}
+new_case dsm-fresh
+run_install || { cat "$case_root/output"; fail 'DSM fresh install'; }
+[[ -x "$case_root/native/bin/modudock" && -d "$case_root/native/data" ]] || fail 'DSM files not installed to native volume root'
+grep -q "^ReadWritePaths=$case_root/native/data$" "$UNIT_FILE" || fail 'DSM unit is not writable in the data directory'
+
+new_case dsm-upgrade
+mkdir -p "$case_root/native/bin" "$case_root/native/data/plugins"
+chmod 755 "$case_root/native"
+printf database > "$case_root/native/data/core.db"
+printf key > "$case_root/native/data/auth.key"
+printf plugin > "$case_root/native/data/plugins/data"
+printf '#!/bin/bash\necho old\n' > "$case_root/native/bin/modudock"
+chmod 755 "$case_root/native/bin/modudock"
+printf custom-dsm-unit > "$UNIT_FILE"
+active=1
+run_install || { cat "$case_root/output"; fail 'DSM upgrade'; }
+[[ $(cat "$UNIT_FILE") == custom-dsm-unit ]] || fail 'existing DSM unit overwritten'
+backup=$(find "$case_root/native/backups" -mindepth 1 -maxdepth 1 -type d | head -1)
+[[ $(cat "$backup/data/core.db") == database && $(cat "$backup/data/auth.key") == key && $(cat "$backup/data/plugins/data") == plugin ]] || fail 'DSM full backup missing'
+grep -q old "$backup/modudock" || fail 'DSM previous binary backup missing'
+
+new_case dsm-denied-su
+mkdir -p "$case_root/native/bin" "$case_root/native/data"
+chmod 755 "$case_root/native"
+printf database > "$case_root/native/data/core.db"
+printf old > "$case_root/native/bin/modudock"
+printf existing > "$UNIT_FILE"
+active=1; su_failure=1
+if run_install; then fail 'DSM rejected su was accepted'; fi
+if grep -q '^stop ' "$events"; then fail 'DSM service stopped before su preflight'; fi
+su_failure=0
+new_case dsm-no-account
+missing_dsm_user=1
+if run_install; then fail 'DSM installer accepted missing service account'; fi
+[[ ! -e "$case_root/native" ]] || fail 'missing DSM account changed installation files'
+echo 'PASS DSM full installation flow without getent/useradd/runuser; missing account fails before installation writes.'

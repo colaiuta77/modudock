@@ -101,18 +101,55 @@ journalctl -u modudock -n 100
 
 systemd 예제는 loopback 접속으로 시작합니다. 직접 LAN 접속이 필요하면 `--listen 0.0.0.0:7438`로 변경하되 방화벽으로 허용 범위를 제한하세요. 비root 서비스 계정의 권한이 플러그인 권한이기도 합니다.
 
-### Synology DSM
+### Docker 리버스 프록시에서 네이티브 서버에 연결할 때
 
-DSM마다 서비스 등록 방식과 커널이 다르므로 최초 운영은 Docker 방식을 권장합니다. 네이티브는 해당 CPU용 바이너리의 `version`, `healthcheck`부터 실제 장비에서 검증하세요.
+프록시가 호스트 프로세스라면 loopback upstream을 사용할 수 있습니다. 프록시가 Docker bridge 모드이면 컨테이너의 `127.0.0.1`은 호스트가 아닙니다. 호스트 사설 IP로 전달한다면 ModuDock도 그 IP에서 수신해야 합니다. 아래 사설 IP와 도메인을 실제 값으로 바꾸어 `sudo systemctl edit modudock.service`에 저장합니다.
 
-전용 일반 계정과 `/volume1/docker/ModuDock-Go` 같은 새 폴더를 준비합니다. 관리자 생성 후 DSM 작업 스케줄러의 사용자 정의 부팅 작업을 전용 계정으로 등록합니다.
-
-```sh
-cd /volume1/docker/ModuDock-Go
-exec ./modudock serve --data-dir ./data --listen 127.0.0.1:7439 --public-url https://새로운-서비스-도메인
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/modudock serve --data-dir /var/lib/modudock --listen 10.0.0.10:7438 --public-url https://modudock.example.org
 ```
 
-이 방식은 systemd처럼 자동 재시작을 보장하지 않습니다. DSM에서 프로세스 종료·자동 시작·권한을 확인해야 하며, 현재 실제 DSM 기동 검증은 하지 않았습니다. 플러그인 실행파일이 요구하는 최소 커널도 확인해야 합니다.
+```sh
+sudo systemctl daemon-reload
+sudo systemctl restart modudock
+curl -fsS http://10.0.0.10:7438/healthz
+```
+
+`0.0.0.0:7438`도 가능하지만 모든 IPv4 인터페이스에서 받습니다. 사설 IP 바인딩도 공인 NAT나 기존 보안 규칙에 따라 외부에서 접근될 수 있으므로 방화벽과 클라우드 ingress는 프록시 경로만 허용하세요. 7438을 인터넷 전체에 개방하지 않습니다. 프록시 upstream은 HTTP, 외부 주소는 HTTPS이며 `--public-url`은 수신 주소와 별개입니다. SSE 응답 버퍼링도 끕니다.
+
+### Synology DSM
+
+DSM 7의 systemd 설치 분기를 제공합니다. 기준 환경은 사용자 제공 DSM 7.4.1 x86_64·kernel 5.10.55+입니다. 실제 NAS에서의 최초 설치·재부팅은 별도 확인이 필요합니다.
+
+1. DSM 제어판 → 사용자 및 그룹에서 `modudock` 사용자를 한 번 생성합니다. 이 계정은 서비스 실행용이며 웹 관리자 계정과 다릅니다.
+2. `administrators` 그룹에 넣지 않습니다. 다른 공유 폴더는 접근 거부, DSM 애플리케이션 권한도 허용하지 않는 것을 권장합니다. 기본 `users` 그룹 권한이 상속될 수 있으므로 이 계정의 실제 권한을 확인하세요.
+3. 계정은 활성 상태여야 하며 암호 만료·다음 로그인 시 암호 변경 요구를 해제합니다. 설치기는 이 계정 암호를 받거나 바꾸지 않고 root의 `su`로 실행 권한만 전환합니다.
+4. SSH에서 위와 같은 한 줄 설치 명령을 실행합니다. 기본 전용 그룹 `modudock`이 없으면 설치기가 그룹만 생성합니다. 다른 그룹의 구성원은 덮어쓰지 않습니다.
+
+DSM 설치 경로입니다.
+
+```text
+/volume1/modudock/bin/modudock
+/volume1/modudock/data/
+/volume1/modudock/backups/
+/volume1/modudock/share/
+/etc/systemd/system/modudock.service
+```
+
+`/volume1`은 실제로 마운트된 로컬 btrfs/ext4 볼륨이어야 합니다. `/volume2` 등 다른 볼륨은 다음처럼 지정하며 업데이트에도 같은 볼륨을 사용합니다.
+
+```sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh
+sudo env MODUDOCK_DSM_VOLUME=/volume2 bash install.sh
+```
+
+DSM에서는 getent/useradd/runuser를 요구하지 않고 id·synogroup·su·systemctl을 사용합니다. 루트 설치 폴더는 root 소유, 데이터는 modudock 소유로 분리합니다. 기존 서비스 파일과 drop-in은 보존하고 데이터 전체와 MFA auth.key를 같은 볼륨의 backups에 저장합니다. 기존 Docker 볼륨은 수정하거나 자동으로 이전하지 않습니다.
+
+기본 수신은 `127.0.0.1:7438`입니다. 기존 Docker가 7438을 사용 중이면 먼저 중지하거나 신규 서비스의 포트를 별도로 정해야 합니다. DSM 프록시 구성에 맞춰 위 systemd override를 적용하되 실행파일·데이터 경로는 DSM 경로로 바꿉니다. 예를 들어 ExecStart는 `/volume1/modudock/bin/modudock serve --data-dir /volume1/modudock/data --listen 192.168.1.100:7438 --public-url https://실제도메인`입니다.
+
+이번 변경은 설치 스크립트에만 적용되므로 기존 v0.1.0 실행파일을 사용합니다. v0.1.0 아카이브 안의 install.sh는 이전본이므로 DSM에서는 최신 main의 스크립트를 사용하세요. 실제 서비스 기동·접근 권한·재부팅 자동 시작 및 DSM 대규모 업데이트 후 서비스 유지를 확인해야 합니다. 플러그인은 서비스 계정과 같은 권한으로 실행하는 신뢰 코드이며 악성 플러그인 격리는 제공하지 않습니다.
 
 ## 백업과 복원
 

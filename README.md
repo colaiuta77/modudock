@@ -29,7 +29,7 @@ systemd Linux amd64·arm64용입니다. **GitHub Releases에 실행파일과 SHA
 curl -fsSL https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh | sudo bash
 ```
 
-첫 설치 때 SSH 터미널에서 관리자 이름과 비밀번호를 입력합니다. 기본 접속은 `http://127.0.0.1:7438`이며 외부 공개는 별도 HTTPS 프록시 설정이 필요합니다. 재실행은 기존 계정·데이터·서비스 설정을 보존하며 업데이트합니다. Synology DSM은 이 systemd 설치 대상이 아닙니다.
+첫 설치 때 SSH 터미널에서 관리자 이름과 비밀번호를 입력합니다. 기본 접속은 `http://127.0.0.1:7438`이며 외부 공개는 별도 HTTPS 프록시 설정이 필요합니다. 재실행은 기존 계정·데이터·서비스 설정을 보존하며 업데이트합니다. DSM 7은 제어판에서 비관리자 `modudock` 계정을 한 번 생성한 뒤 같은 명령을 사용합니다. DSM 데이터는 기본 `/volume1/modudock/data`이며 [DSM 설치 주의사항](docs/installation.md#synology-dsm)을 먼저 확인하세요.
 
 개발 소스에서 Docker 이미지를 만들고 처음 실행하는 예입니다.
 

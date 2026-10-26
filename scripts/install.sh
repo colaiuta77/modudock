@@ -10,12 +10,18 @@ DATA_DIR=/var/lib/modudock
 UNIT_FILE=/etc/systemd/system/modudock.service
 SHARE_DIR=/usr/local/share/modudock
 BACKUP_DIR=/var/backups/modudock
-LOCK_FILE=/run/lock/modudock-install.lock
+LOCK_FILE=/run/modudock-installer/install.lock
 WORK_DIR=''
 BACKUP_PATH=''
 STAGED_BINARY=''
 DATA_LOCK_PID=''
 DATA_LOCK_INPUT=''
+PLATFORM=linux
+DSM_VERSION_FILE=/etc.defaults/VERSION
+MOUNTS_FILE=/proc/mounts
+GROUP_FILE=/etc/group
+DSM_VOLUME=''
+NATIVE_ROOT=''
 
 log() { printf '%s\n' "[ModuDock] $*" >&2; }
 die() { log "$*"; exit 1; }
@@ -26,9 +32,93 @@ detect_arch() {
     *) die "Unsupported CPU architecture: $1 (amd64/arm64 only).";;
   esac
 }
+detect_platform() {
+  if [[ -f "$DSM_VERSION_FILE" ]] && grep -q '^os_name="DSM"$' "$DSM_VERSION_FILE"; then printf dsm; else printf linux; fi
+}
+configure_platform() {
+  PLATFORM=$(detect_platform)
+  if [[ "$PLATFORM" == dsm ]]; then
+    [[ $(awk -F '"' '$1=="majorversion=" {print $2}' "$DSM_VERSION_FILE") == 7 ]] || die 'DSM 7 is required.'
+    DSM_VOLUME=${MODUDOCK_DSM_VOLUME:-/volume1}
+    [[ "$DSM_VOLUME" =~ ^/volume[1-9][0-9]*$ ]] || die 'MODUDOCK_DSM_VOLUME must be a mounted /volumeN path.'
+    awk -v volume="$DSM_VOLUME" '$2==volume {type=$3} END {exit !(type=="btrfs" || type=="ext4")}' "$MOUNTS_FILE" || die 'The selected DSM volume must be a mounted local btrfs/ext4 volume.'
+    PATH="/usr/syno/sbin:/usr/syno/bin:$PATH"
+    NATIVE_ROOT="$DSM_VOLUME/modudock"
+    INSTALL_DIR="$NATIVE_ROOT/bin"
+    DATA_DIR="$NATIVE_ROOT/data"
+    SHARE_DIR="$NATIVE_ROOT/share"
+    BACKUP_DIR="$NATIVE_ROOT/backups"
+  fi
+}
 check_systemd() {
-  [[ -d /run/systemd/system ]] || die 'A running systemd Linux host is required. Synology DSM and containers without systemd are not supported.'
-  systemctl show --property=Version --value >/dev/null
+  systemctl show --property=Version --value >/dev/null || die 'A running systemd manager is required.'
+}
+service_account_exists() {
+  if [[ "$PLATFORM" == dsm ]]; then id -u modudock >/dev/null 2>&1; else getent passwd modudock >/dev/null; fi
+}
+validate_service_account() {
+  local uid groups
+  uid=$(id -u modudock) || die 'Create a non-administrator modudock account in DSM Control Panel, deny access to unrelated shared folders, then rerun the installer.'
+  [[ "$uid" =~ ^[0-9]+$ && "$uid" != 0 ]] || die 'The modudock service account must not be root.'
+  if [[ "$PLATFORM" == dsm ]]; then
+    groups=" $(id -Gn modudock) "
+    [[ "$groups" != *' administrators '* ]] || die 'The modudock service account must not be a DSM administrator.'
+  fi
+}
+ensure_dsm_group() {
+  local gid
+  gid=$(awk -F: '$1=="modudock" {print $3}' "$GROUP_FILE")
+  if [[ -z "$gid" ]]; then
+    synogroup --add modudock modudock || die 'Could not create the dedicated DSM group.'
+    gid=$(awk -F: '$1=="modudock" {print $3}' "$GROUP_FILE")
+  fi
+  [[ "$gid" =~ ^[0-9]+$ && "$gid" != 0 ]] || die 'The modudock group must exist and must not be root.'
+}
+as_service() {
+  if [[ "$PLATFORM" == dsm ]]; then
+    local command
+    printf -v command '%q ' "$@"
+    su -s "$BASH" -g modudock -c "$command" modudock 9>&-
+  else
+    runuser -u modudock -- "$@" 9>&-
+  fi
+}
+verify_service_execution() {
+  [[ $(as_service id -u </dev/null) == "$(id -u modudock)" ]] || die 'Cannot switch to the service account non-interactively. Ensure it is enabled and does not require a password change.'
+}
+prepare_install_lock() {
+  local directory=${LOCK_FILE%/*}
+  [[ ! -L "$directory" ]] || die 'Installer lock directory must not be a symbolic link.'
+  [[ ! -e "$directory" || (-d "$directory" && -O "$directory") ]] || die 'Installer lock directory must be owned by the installer user.'
+  install -d -m 0700 "$directory"
+  [[ ! -L "$LOCK_FILE" && (! -e "$LOCK_FILE" || (-f "$LOCK_FILE" && -O "$LOCK_FILE")) ]] || die 'Installer lock must be an owned regular file.'
+  exec 9<>"$LOCK_FILE"
+  flock -n 9 || die 'Another ModuDock installation is running.'
+}
+prepare_service_unit() {
+  if [[ "$PLATFORM" == dsm ]]; then
+    awk -v volume="$DSM_VOLUME" -v data="$DATA_DIR" -v binary="$INSTALL_DIR/modudock" '
+      /^Description=/ {print; print "RequiresMountsFor=" volume; next}
+      /^StateDirectory/ {next}
+      /^WorkingDirectory=/ {print "WorkingDirectory=" data; next}
+      /^ExecStart=/ {print "ExecStart=" binary " serve --data-dir " data " --listen 127.0.0.1:7438"; next}
+      /^ProtectSystem=/ {print; print "ReadWritePaths=" data; next}
+      {print}
+    ' "$WORK_DIR/modudock.service" > "$WORK_DIR/modudock-dsm.service"
+    mv "$WORK_DIR/modudock-dsm.service" "$WORK_DIR/modudock.service"
+  fi
+}
+prepare_native_root() {
+  [[ "$PLATFORM" == dsm ]] || return 0
+  [[ ! -L "$DSM_VOLUME" && ! -L "$NATIVE_ROOT" ]] || die 'DSM native root must not be a symbolic link.'
+  if [[ -e "$NATIVE_ROOT" ]]; then
+    [[ -d "$NATIVE_ROOT" && $(stat -c %u "$NATIVE_ROOT") == 0 ]] || die 'Existing DSM native root must be a root-owned directory.'
+    local mode
+    mode=$(stat -c %a "$NATIVE_ROOT")
+    (( (8#$mode & 0022) == 0 )) || die 'DSM native root must not be writable by group or others.'
+  else
+    install -d -m 0755 -o root -g root "$NATIVE_ROOT"
+  fi
 }
 https() {
   curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --connect-timeout 15 --max-time 300 "$@"
@@ -123,7 +213,7 @@ validate_existing_service() {
 acquire_data_lock() {
   # 서비스 계정 권한으로만 잠금 파일을 열어 root의 링크 추적·소유권 변경을 피한다.
   coproc MODUDOCK_DATA_LOCK {
-    runuser -u modudock -- bash -c 'exec 8<>"$1"; flock -n 8 || exit 1; printf "locked\n"; IFS= read -r release' -- "$DATA_DIR/core.lock"
+    as_service bash -c 'exec 8<>"$1"; flock -n 8 || exit 1; printf "locked\n"; IFS= read -r release' -- "$DATA_DIR/core.lock"
   }
   DATA_LOCK_PID=$MODUDOCK_DATA_LOCK_PID
   DATA_LOCK_INPUT=${MODUDOCK_DATA_LOCK[1]}
@@ -164,39 +254,44 @@ main() {
   (($# == 0)) || die 'Usage: install.sh (optional MODUDOCK_VERSION=vX.Y.Z and MODUDOCK_HEALTH_URL=http://127.0.0.1:7438).'
   [[ $(uname -s) == Linux ]] || die 'Linux only.'
   [[ $(id -u) == 0 ]] || die 'Run as root, for example curl ... | sudo bash.'
-  local command arch version new_install=0 account uid
-  for command in curl tar sha256sum awk uname mktemp install cp mv chmod chown flock getent useradd runuser systemctl cut date sleep; do
+  local command arch version new_install=0 account_exists=0
+  configure_platform
+  for command in curl tar sha256sum awk uname mktemp install cp mv chmod chown flock systemctl cut date sleep grep id; do
     command -v "$command" >/dev/null || die "Required command is missing: $command"
   done
+  if [[ "$PLATFORM" == dsm ]]; then
+    for command in synogroup su stat; do command -v "$command" >/dev/null || die "Required DSM command is missing: $command"; done
+    validate_service_account
+  else
+    for command in getent useradd runuser; do command -v "$command" >/dev/null || die "Required command is missing: $command"; done
+  fi
   check_systemd
   arch=$(detect_arch "$(uname -m)")
   validate_paths
-  exec 9>"$LOCK_FILE"
-  flock -n 9 || die 'Another ModuDock installation is running.'
+  prepare_install_lock
   WORK_DIR=$(mktemp -d /tmp/modudock-install.XXXXXX)
   trap cleanup EXIT
   version=$(release_version)
   download_release "$version" "$arch"
+  prepare_service_unit
   [[ -f "$DATA_DIR/core.db" ]] || new_install=1
   if ((new_install)); then prompt_admin; fi
-  account=$(getent passwd modudock || true)
-  if [[ -n "$account" ]]; then
-    uid=$(printf '%s' "$account" | cut -d: -f3)
-    [[ "$uid" =~ ^[0-9]+$ && "$uid" != 0 ]] || die 'The modudock service account must not be root.'
-  fi
+  if service_account_exists; then account_exists=1; validate_service_account; fi
+  if [[ "$PLATFORM" == dsm ]]; then ensure_dsm_group; verify_service_execution; prepare_native_root; fi
   if [[ -f "$UNIT_FILE" || $(systemctl show modudock --property=LoadState --value) == loaded ]]; then
     validate_existing_service
   fi
-  [[ ! -d "$DATA_DIR" || -n "$account" ]] || die 'Existing data has no modudock service account; migrate it manually before updating.'
+  [[ ! -d "$DATA_DIR" || $account_exists == 1 ]] || die 'Existing data has no modudock service account; migrate it manually before updating.'
   if systemctl is-active --quiet modudock; then systemctl stop modudock || die 'Could not stop the existing service.'; fi
   validate_paths
   if [[ -d "$DATA_DIR" ]]; then
     acquire_data_lock
   fi
   backup_installation
-  if [[ -z "$account" ]]; then
+  if ((account_exists == 0)); then
     useradd --system --user-group --home-dir "$DATA_DIR" --shell /usr/sbin/nologin modudock
   fi
+  if [[ "$PLATFORM" == linux ]]; then verify_service_execution; fi
   install -d -m 0700 -o modudock -g modudock "$DATA_DIR"
   install -d -m 0755 "$INSTALL_DIR" "$SHARE_DIR"
   STAGED_BINARY="$INSTALL_DIR/.modudock.new.$$"
@@ -211,14 +306,14 @@ main() {
   fi
   release_data_lock
   if ((new_install)); then
-    printf '%s\n' "$ADMIN_PASSWORD" | runuser -u modudock -- "$INSTALL_DIR/modudock" admin create --data-dir "$DATA_DIR" --username "$ADMIN_USERNAME" --password-stdin || die 'Administrator creation failed. The service was not started; create an administrator manually before starting it.'
+    printf '%s\n' "$ADMIN_PASSWORD" | as_service "$INSTALL_DIR/modudock" admin create --data-dir "$DATA_DIR" --username "$ADMIN_USERNAME" --password-stdin || die 'Administrator creation failed. The service was not started; create an administrator manually before starting it.'
     unset ADMIN_PASSWORD
   fi
   systemctl daemon-reload || die 'systemd daemon-reload failed.'
   systemctl enable --now modudock || die 'systemd could not start ModuDock.'
   local attempt healthy=0
   for attempt in {1..15}; do
-    if systemctl is-active --quiet modudock && runuser -u modudock -- "$INSTALL_DIR/modudock" healthcheck --url "${MODUDOCK_HEALTH_URL:-http://127.0.0.1:7438}"; then healthy=1; break; fi
+    if systemctl is-active --quiet modudock && as_service "$INSTALL_DIR/modudock" healthcheck --url "${MODUDOCK_HEALTH_URL:-http://127.0.0.1:7438}"; then healthy=1; break; fi
     sleep 1
   done
   ((healthy)) || die 'Service did not become healthy. For a custom port, set MODUDOCK_HEALTH_URL to its local HTTP origin.'
