@@ -28,6 +28,11 @@ if (unset MODUDOCK_DSM_ROOT; MODUDOCK_DSM_VOLUME=/tmp/unmounted; configure_platf
 if (unset MODUDOCK_DSM_ROOT; MODUDOCK_DSM_VOLUME=/volume2; configure_platform) >/dev/null 2>&1; then fail 'unmounted volume accepted'; fi
 printf 'server:/share /volume2 nfs rw 0 0\n' >> "$MOUNTS_FILE"
 if (unset MODUDOCK_DSM_ROOT; MODUDOCK_DSM_VOLUME=/volume2; configure_platform) >/dev/null 2>&1; then fail 'network volume accepted for SQLite'; fi
+for type in nfs tmpfs; do
+  printf '/dev/test /volume1 btrfs rw 0 0\nfixture /volume1/modudock/bin %s rw 0 0\n' "$type" > "$MOUNTS_FILE"
+  if (configure_platform) >/dev/null 2>&1; then fail "nested $type binary mount accepted"; fi
+done
+printf '/dev/test /volume1 btrfs rw 0 0\n' > "$MOUNTS_FILE"
 
 WORK_DIR="$test_root/work"
 mkdir -p "$WORK_DIR"

@@ -94,7 +94,7 @@ sudo systemctl restart modudock
 sudo -u modudock /usr/local/bin/modudock healthcheck --config /etc/modudock/config.yaml
 ```
 
-`config check`는 DB·로그 파일을 만들거나 열지 않습니다. 설정은 root 소유·서비스 그룹 읽기 전용이며 서비스는 설정 디렉터리에 쓸 수 없습니다. 신규 설치는 `/etc/logrotate.d/modudock` 규칙을 준비하지만 예약된 logrotate(timer 또는 cron)가 확인될 때만 `/var/log/modudock/service.log` 출력을 활성화합니다. 회전이 없으면 규칙은 비활성 준비 상태이며 선택적 파일 로그를 끄고 journal과 자체 5 MiB×4 제한 UI 로그만 유지합니다. UI의 `data/logs/core.jsonl`은 logrotate 대상으로 삼지 않습니다. 운영 로그는 daily/maxsize 5M, 7개 보존, copytruncate이므로 회전 순간 일부 로그 손실 가능성이 있고 실제 예약 주기에 따라 5 MiB를 넘을 수 있습니다. 예약 작업의 실행을 운영 환경에서 확인하세요.
+`config check`는 DB·로그 파일을 만들거나 열지 않습니다. 설정은 root 소유·서비스 그룹 읽기 전용이며 서비스는 설정 디렉터리에 쓸 수 없습니다. 신규 설치는 `/etc/logrotate.d/modudock` 규칙을 준비하지만 logrotate 실행파일과 활성 `logrotate.timer`가 모두 확인될 때만 `/var/log/modudock/service.log` 출력을 활성화합니다. cron 스크립트 파일만으로 실제 예약 실행을 보장할 수 없어 자동 감지하지 않습니다. 사용자 지정 cron을 쓰려면 실제 실행·회전과 서비스의 로그 쓰기 권한을 수동 구성·검증한 후 `log_file`을 설정하세요. timer가 없으면 규칙은 비활성 준비 상태이며 선택적 파일 로그를 끄고 journal과 자체 5 MiB×4 제한 UI 로그만 유지합니다. 기존 config에서 파일 로그가 켜져 있으면 자동 업데이트도 활성 timer와 규칙을 요구하므로 cron 전용 설치는 `log_file`을 비우거나 수동 업데이트합니다. UI의 `data/logs/core.jsonl`은 logrotate 대상으로 삼지 않습니다. 운영 로그는 daily/maxsize 5M, 7개 보존, copytruncate이므로 회전 순간 일부 로그 손실 가능성이 있고 실제 예약 주기에 따라 5 MiB를 넘을 수 있습니다. 예약 작업의 실행을 운영 환경에서 확인하세요.
 
 ### 수동 설치
 

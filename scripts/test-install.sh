@@ -62,6 +62,7 @@ runuser() {
 }
 systemctl() {
   echo "$*" >> "$events"
+  if [[ "$*" == 'is-active --quiet logrotate.timer' ]]; then [[ ${rotation_enabled:-1} == 1 ]]; return; fi
   local arg property
   for arg in "$@"; do
     case "$arg" in
@@ -87,7 +88,11 @@ systemctl() {
 }
 sleep() { :; }
 prompt_admin() { ADMIN_USERNAME=admin; ADMIN_PASSWORD='fixture-password-1234'; echo prompted >> "$events"; }
-rotation_available() { [[ ${rotation_enabled:-1} == 1 ]]; }
+logrotate() { :; }
+command() {
+  if [[ "$*" == '-v logrotate' && ${logrotate_installed:-1} == 0 ]]; then return 1; fi
+  builtin command "$@"
+}
 
 new_case() {
   case_root="$test_root/$1"
@@ -103,9 +108,17 @@ new_case() {
   LOCK_FILE="$case_root/lock/install.lock"
   events="$case_root/events"
   : > "$events"
-  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''; effective_config=''; effective_flags=''; effective_listen=''; rotation_enabled=1
+  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''; effective_config=''; effective_flags=''; effective_listen=''; rotation_enabled=1; logrotate_installed=1
 }
 run_install() { (main "$@") > "$case_root/output" 2>&1; }
+
+new_case rotation-boundaries
+rotation_enabled=0
+if rotation_available; then fail 'inactive timer accepted as working rotation'; fi
+rotation_enabled=1
+rotation_available || fail 'active timer with logrotate not recognized'
+logrotate_installed=0
+if rotation_available; then fail 'missing logrotate executable accepted'; fi
 
 new_case network-validation
 for value in 'https://example.test/path' 'https://user@example.test' 'https://example.test?' 'https://example.test#' 'https://example.test/' 'https://example.test:99999' 'https://example.test/%n' 'http://bad host'; do

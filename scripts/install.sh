@@ -73,7 +73,7 @@ validate_dsm_storage() {
   [[ "$PLATFORM" == dsm ]] || return 0
   local mount type path
   while read -r mount type; do
-    for path in "$NATIVE_ROOT" "$DATA_DIR" "${CONFIG_FILE%/*}" "$LOG_DIR" "$SHARE_DIR" "$BACKUP_DIR"; do
+    for path in "$NATIVE_ROOT" "$INSTALL_DIR" "$DATA_DIR" "${CONFIG_FILE%/*}" "$LOG_DIR" "$SHARE_DIR" "$BACKUP_DIR"; do
       if [[ "$path/" == "$mount/"* && "$type" != btrfs && "$type" != ext4 ]]; then die 'DSM storage cannot be on a nested network or virtual mount.'; fi
     done
   done < <(awk '{print $2, $3}' "$MOUNTS_FILE")
@@ -139,7 +139,7 @@ check_candidate_config() {
   [[ $("$CANDIDATE" config check --config "$WORK_DIR/probe.yaml" --field data_dir) == /modudock-config-capability-probe ]] || die 'Downloaded binary lacks YAML config support. Select a config-capable release (v0.2.0 or newer); installation unchanged.'
 }
 rotation_available() {
-  command -v logrotate >/dev/null && { [[ -x /etc/cron.daily/logrotate ]] || systemctl is-active --quiet logrotate.timer; }
+  command -v logrotate >/dev/null && systemctl is-active --quiet logrotate.timer
 }
 show_installation() {
   log '----------------------------------------'
@@ -351,7 +351,7 @@ validate_existing_service() {
     LOG_FILE=$("$CANDIDATE" "${effective[@]}" --field log_file) || die 'Cannot resolve configured log file.'
     safe_path "$DATA_DIR" || die 'Existing config data_dir must be an explicit supported absolute path.'
     [[ -f "$DATA_DIR/core.db" ]] || die 'Configured database is missing; refusing to create a replacement database.'
-    [[ -z "$LOG_FILE" ]] || { safe_path "$LOG_FILE" && rotation_available && [[ -f "$LOGROTATE_FILE" ]]; } || die 'Existing file logging needs a safe absolute path and scheduled logrotate with a rule; configure rotation before updating.'
+    [[ -z "$LOG_FILE" ]] || { safe_path "$LOG_FILE" && rotation_available && [[ -f "$LOGROTATE_FILE" ]]; } || die 'Existing file logging needs a safe absolute path, active logrotate.timer and a rule; configure rotation before updating.'
     CONFIG_FILE=$config_path
     EXISTING_CONFIG=$config_path
   else

@@ -13,5 +13,6 @@
 - Task 1 구현. CLI는 serve --config PATH, config check --config PATH [--field data_dir|listen|public_url|log_file], healthcheck --config PATH [--url URL]를 제공한다. config check는 DB나 로그 파일을 생성하지 않는다. 명시 플래그는 YAML보다 우선하며 별도 운영 로그는 선택적 io.Writer로 코어에 전달한다.
 - go list -m -json go.yaml.in/yaml/v3@latest 실제 조회에서 v3.0.5를 확인하여 고정했다. YAML은 라이브러리 Node로 파싱하고 스칼라 문자열·허용 필드·중복·단일 문서를 엄격히 검증한다.
 - Task 1 검증. 전체 `go test ./... -count=1` 통과. WSL에서 Bash 구문 검사와 scripts/test-install.sh·scripts/test-install-dsm.sh 모두 통과했다. 새 config 설치, config/CLI override 보존, 백업, health override, 회전 부재 시 파일 로그 비활성, 구버전 binary 거부, Docker hex 인터페이스 제외를 확인했다.
-- logrotate 규칙은 신규 설치에 항상 준비하되 실행파일과 예약(timer 또는 cron)이 모두 확인된 경우에만 별도 service.log를 활성화한다. 예약 부재는 명확히 안내하고 core.jsonl 자체 회전과 journal을 유지한다. copytruncate 손실 가능성과 크기 확인 주기 제한은 설치 문서에 기록했다.
+- logrotate 규칙은 신규 설치에 항상 준비하되 실행파일과 활성 logrotate.timer가 모두 확인된 경우에만 별도 service.log를 활성화한다. cron 스크립트 존재는 예약 실행을 보장하지 않아 자동 감지하지 않는다. timer 부재는 명확히 안내하고 core.jsonl 자체 회전과 journal을 유지한다. 수동 cron 구성과 copytruncate 손실 가능성·크기 확인 주기 제한은 설치 문서에 기록했다.
 - 완료 안내는 Version·Access·Binary·Config·Data·로그·systemctl 명령을 줄별로 출력한다. legacy CLI 설치는 없는 config 경로 대신 기존 systemd 인자 보존을 표시한다. 기존 unit/drop-in/config는 자동 변환하지 않는다.
+- 독립 검토 후속 수정. 실제 rotation_available을 유지하고 command/systemctl 경계만 대역한 테스트로 inactive timer의 잘못된 허용을 RED로 확인했다. DSM bin NFS/tmpfs 마운트 거부 테스트도 추가하여 INSTALL_DIR 검증 누락을 재현했다. 제품 변경은 활성 timer 확인과 DSM 검증 대상 경로 추가로 제한한다.
