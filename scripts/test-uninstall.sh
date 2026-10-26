@@ -33,6 +33,7 @@ systemctl() {
       FragmentPath) printf 'FragmentPath=%s\n' "$UNIT_FILE";;
       ExecStart) printf 'ExecStart={ path=%s ; argv[]=%s serve --data-dir /retained/data --listen 192.168.1.100:7438 ; ignore_errors=no ; }\n' "${effective_binary:-$INSTALL_DIR/modudock}" "${effective_binary:-$INSTALL_DIR/modudock}";;
       User|Group) printf '%s=modudock\n' "$property";;
+      RootDirectory|RootImage|BindPaths|BindReadOnlyPaths|TemporaryFileSystem) printf '%s=%s\n' "$property" "$([[ ${mapping_property:-} != "$property" ]] || printf /isolated/path)";;
     esac
     return 0
   fi
@@ -52,7 +53,7 @@ new_case() {
   printf plugin > "$DATA_DIR/plugins/data"; printf yaml-settings > "$CONFIG_FILE"
   printf rotation > "$LOGROTATE_FILE"; printf notice > "$SHARE_DIR/LICENSE"; printf log > "$LOG_DIR/service.log"
   events="$case_root/events"; : > "$events"
-  fixture_platform=linux; command_failure=''; property_failure=''; copy_failure=0; effective_binary=''
+  fixture_platform=linux; command_failure=''; property_failure=''; copy_failure=0; effective_binary=''; mapping_property=''
   unset MODUDOCK_DSM_ROOT MODUDOCK_DSM_VOLUME
 }
 retained() {
@@ -99,10 +100,18 @@ if run_uninstall; then fail 'concurrent installer lock ignored'; fi
 exec 8>&-
 [[ -f "$UNIT_FILE" && -f "$INSTALL_DIR/modudock" ]] || fail 'locked uninstall deleted files'
 
-for property in Version LoadState ExecStart FragmentPath User Group; do
+for property in Version LoadState ExecStart FragmentPath User Group RootDirectory RootImage BindPaths BindReadOnlyPaths TemporaryFileSystem; do
   new_case "property-$property"; property_failure=$property
   if run_uninstall; then fail "failed $property inspection ignored"; fi
   [[ -f "$UNIT_FILE" && -f "$INSTALL_DIR/modudock" ]] || fail 'inspection failure deleted files'
+done
+
+for property in RootDirectory RootImage BindPaths BindReadOnlyPaths TemporaryFileSystem; do
+  new_case "mapping-$property"; mapping_property=$property
+  if run_uninstall; then fail "filesystem mapping $property accepted"; fi
+  [[ -f "$UNIT_FILE" && -f "$INSTALL_DIR/modudock" ]] || fail 'filesystem mapping deleted host files'
+  if grep -q '^stop ' "$events"; then fail 'mapped service stopped'; fi
+  retained
 done
 
 new_case dsm-custom; fixture_platform=dsm; effective_binary=/volume2/apps/modudock/bin/modudock

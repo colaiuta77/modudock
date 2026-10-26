@@ -413,7 +413,7 @@ cleanup() {
 uninstall_native() {
   [[ $(uname -s) == Linux ]] || die 'Linux only.'
   [[ $(id -u) == 0 ]] || die 'Run uninstall as root.'
-  local required state execution binary='' arguments property backup=''
+  local required state execution binary='' arguments property value backup=''
   for required in systemctl uname id awk grep install cp mktemp date flock rm; do
     command -v "$required" >/dev/null || die "Required command is missing: $required"
   done
@@ -429,6 +429,10 @@ uninstall_native() {
     [[ ${execution#*'argv[]='} != *'argv[]='* && "$arguments" == "$binary serve "* ]] || die 'Unsupported service command; nothing was removed.'
     for property in User Group; do
       [[ $(systemd_property "$property" modudock) == modudock ]] || die 'Service identity is not modudock; nothing was removed.'
+    done
+    for property in RootDirectory RootImage BindPaths BindReadOnlyPaths TemporaryFileSystem; do
+      value=$(systemd_property "$property" modudock) || die 'Cannot inspect service filesystem settings; nothing was removed.'
+      [[ -z "$value" ]] || die "Unsupported service filesystem mapping: $property. Nothing was removed."
     done
   elif [[ "$state" != not-found || -e "$UNIT_FILE" ]]; then
     die 'Service state is not recognized. Inspect systemctl cat modudock before removal.'
