@@ -36,7 +36,6 @@ curl() {
     ln -sf "$test_root/root-victim" "$DATA_DIR/core.lock"
   fi
 }
-check_systemd() { :; }
 id() { if [[ "$*" == '-u modudock' ]]; then echo 999; elif [[ ${1:-} == -u && $# == 1 ]]; then echo 0; else command id "$@"; fi; }
 getent() { if [[ $1 == passwd ]]; then echo 'modudock:x:999:999::/var/lib/modudock:/usr/sbin/nologin'; else command getent "$@"; fi; }
 useradd() { echo useradd >> "$events"; }
@@ -60,16 +59,25 @@ runuser() {
 }
 systemctl() {
   echo "$*" >> "$events"
+  local arg property
+  for arg in "$@"; do
+    case "$arg" in
+      --value|--now) printf "systemctl: unrecognized option '%s'\n" "$arg" >&2; return 1;;
+      --property=*) property=${arg#*=};;
+    esac
+  done
   if [[ "$1" == show ]]; then
-    case "$*" in
-      *ExecStart*) printf '{ path=%s/modudock ; argv[]=%s/modudock serve --data-dir %s --listen 127.0.0.1:7438 ; ignore_errors=no ; }\n' "$INSTALL_DIR" "$INSTALL_DIR" "${effective_data:-$DATA_DIR}";;
-      *User*) echo modudock;;
-      *Group*) echo modudock;;
-      *LoadState*) if [[ -f "$UNIT_FILE" ]]; then echo loaded; else echo not-found; fi;;
+    [[ ${failed_property:-} != "$property" ]] || return 1
+    case "$property" in
+      Version) echo 'Version=219';;
+      ExecStart) printf 'ExecStart={ path=%s/modudock ; argv[]=%s/modudock serve --data-dir=%s --listen=127.0.0.1:7438 --public-url=https://panel.example.test ; ignore_errors=no ; }\n' "$INSTALL_DIR" "$INSTALL_DIR" "${effective_data:-$DATA_DIR}";;
+      User|Group) printf '%s=modudock\n' "$property";;
+      LoadState) if [[ -f "$UNIT_FILE" ]]; then echo 'LoadState=loaded'; else echo 'LoadState=not-found'; fi;;
+      RootDirectory) printf 'RootDirectory=%s\n' "${effective_root:-}";;
     esac
     return 0
   fi
-  case "$1" in is-active) [[ ${active:-0} == 1 ]];; enable) [[ ${start_failure:-0} == 0 ]] || return 1; active=1;; *) return 0;; esac
+  case "$1" in is-active) [[ ${active:-0} == 1 ]];; start) [[ ${start_failure:-0} == 0 ]] || return 1; active=1;; *) return 0;; esac
 }
 sleep() { :; }
 prompt_admin() { ADMIN_USERNAME=admin; ADMIN_PASSWORD='fixture-password-1234'; echo prompted >> "$events"; }
@@ -85,7 +93,7 @@ new_case() {
   LOCK_FILE="$case_root/lock/install.lock"
   events="$case_root/events"
   : > "$events"
-  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''
+  active=0; bad_hash=0; start_failure=0; health_failure=0; download_failure=0; backup_failure=0; swap_lock=0; effective_data=''; effective_root=''; failed_property=''
 }
 run_install() { (main "$@") > "$case_root/output" 2>&1; }
 
@@ -100,7 +108,8 @@ new_case fresh
 run_install || { cat "$case_root/output"; fail 'fresh install'; }
 [[ -x "$INSTALL_DIR/modudock" && -f "$UNIT_FILE" && -d "$DATA_DIR" ]] || fail 'installation files missing'
 grep -q '^prompted$' "$events" || fail 'fresh administrator was not requested'
-grep -q '^enable --now modudock$' "$events" || fail 'service not enabled'
+grep -q '^enable modudock$' "$events" || fail 'service not enabled'
+grep -q '^start modudock$' "$events" || fail 'service not started'
 [[ -f "$SHARE_DIR/LICENSE" ]] || fail 'license missing'
 if grep -q fixture-password "$case_root/output" "$events"; then fail 'administrator password was logged'; fi
 
@@ -125,6 +134,30 @@ backup=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
 [[ $(cat "$backup/data/core.db") == database && $(cat "$backup/data/auth.key") == key && $(cat "$backup/data/plugins/data") == plugin ]] || fail 'full data backup missing'
 grep -q old "$backup/modudock" || fail 'old binary not backed up'
 if grep -q '^prompted$' "$events"; then fail 'update requested a new administrator'; fi
+
+new_case unavailable-systemd
+failed_property=Version
+if run_install; then fail 'unavailable systemd accepted'; fi
+[[ ! -e "$INSTALL_DIR/modudock" && ! -e "$DATA_DIR" ]] || fail 'unavailable systemd changed installation'
+
+for property in ExecStart User Group RootDirectory RootImage BindPaths BindReadOnlyPaths TemporaryFileSystem LoadState; do
+  new_case "failed-property-$property"
+  mkdir -p "$DATA_DIR"; printf existing > "$DATA_DIR/core.db"
+  printf old > "$INSTALL_DIR/modudock"
+  if [[ "$property" != LoadState ]]; then printf custom-unit > "$UNIT_FILE"; fi
+  active=1; failed_property=$property
+  if run_install; then fail "failed $property query accepted"; fi
+  [[ $(cat "$INSTALL_DIR/modudock") == old ]] || fail 'failed systemd query replaced binary'
+  if grep -q '^stop ' "$events"; then fail 'failed systemd query stopped service'; fi
+done
+
+new_case mapped-root
+mkdir -p "$DATA_DIR"; printf existing > "$DATA_DIR/core.db"
+printf old > "$INSTALL_DIR/modudock"; printf custom-unit > "$UNIT_FILE"
+effective_root=/srv/other-root
+if run_install; then fail 'filesystem mapping accepted'; fi
+[[ $(cat "$INSTALL_DIR/modudock") == old ]] || fail 'filesystem mapping replaced binary'
+if grep -q '^stop ' "$events"; then fail 'filesystem mapping stopped service'; fi
 
 for failure in bad_hash download_failure; do
   new_case "$failure"

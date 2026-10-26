@@ -11,3 +11,8 @@
 - 구현 커밋 7aaca02c9862c2cca91dbda8525e220467583e6b를 GitHub main에 정상 push했다. 인증 없는 raw install.sh HTTP200에서 DSM 분기가 반영됨을 확인했다.
 - GitHub Actions run 40271208154가 success로 완료됐다. Go race/vet, Linux·DSM Bash 설치 테스트, 프론트 테스트/npm audit, 내장 UI 빌드·실제 바이너리 smoke, govulncheck, Docker build가 모두 통과했다. main push이므로 새 binaries/publish 릴리스는 발행하지 않았고 v0.1.0 태그는 보존했다.
 - 최종 미검증은 실제 DSM 계정/PAM·systemd sandbox·볼륨 부팅 순서·NAS 재부팅과 Oracle override 적용이다. NAS와 Oracle의 서비스·계정·방화벽을 대신 변경하지 않았다. Oracle 명령 안내의 IP/도메인은 사용자가 제공하고 읽기 전용으로 검증한 값이다.
+- 사용자가 DSM 계정을 생성한 뒤 `systemctl: unrecognized option '--value'`를 보고했다. 계정 문제가 아니라 설치기의 systemctl 옵션 호환 오류이며, 기존 전체 테스트가 check_systemd를 대체하고 속성 값만 반환해 이 차이를 놓쳤다. 구형 옵션을 거부하고 실제 `이름=값`을 반환하는 대역으로 재현한다. 설치 호환 수정 범위만 유지하며 public-url 입력 기능이나 root 실행 전환은 추가하지 않는다.
+- WSL에서 `bash scripts/test-install.sh`가 사용자와 동일한 `unrecognized option '--value'` 및 `A running systemd manager is required`로 RED임을 확인했다. Version=219는 구형 인터페이스 테스트용 대역 값이지 실제 DSM systemd 버전을 확인한 값은 아니다. 속성 조회 실패는 빈 값으로 삼키지 않고, 선택적 미지원 속성의 빈 출력만 허용한다. ExecStart 값 내부의 여러 등호는 그대로 보존한다.
+- 속성 조회만 수정한 뒤 같은 테스트가 `unrecognized option '--now'`로 다음 호환 오류를 재현했다. 서비스 활성화와 시작을 별도 명령으로 분리한다. 독립 리뷰에서도 두 옵션의 구형 systemctl 호환성과 등호 보존·오류 전파 필요성을 확인했다. 실제 DSM의 sandbox 지시어 지원·backport 여부는 별도 미검증으로 남긴다.
+- `bash -n scripts/install.sh scripts/test-install.sh scripts/test-install-dsm.sh && bash scripts/test-install.sh && bash scripts/test-install-dsm.sh`가 WSL에서 통과했다. 모든 조회 속성의 오류 전파, RootDirectory 매핑 거부, 등호 형식의 ExecStart 파싱, Linux/DSM 신규 설치·업데이트·기존 unit 및 전체 데이터 백업을 검증했다. 로컬 Go `go test ./...`도 전체 패키지 통과했다.
+- 독립 최종 리뷰가 동일한 Bash 전체 테스트와 `git diff --check`를 재실행해 통과했으며, 이번 호환 수정에서 Critical/Important/Minor 지적이 없었다. 서비스 hardening 지시어 변경과 실제 NAS 설치·재부팅·vendor backport 검증은 수행하지 않았다.

@@ -50,8 +50,15 @@ configure_platform() {
     BACKUP_DIR="$NATIVE_ROOT/backups"
   fi
 }
+systemd_property() {
+  local property=$1 output
+  shift
+  output=$(systemctl show --property="$property" "$@") || return 1
+  [[ -z "$output" || "$output" == "$property="* ]] || return 1
+  printf '%s\n' "${output#"$property="}"
+}
 check_systemd() {
-  systemctl show --property=Version --value >/dev/null || die 'A running systemd manager is required.'
+  systemd_property Version >/dev/null || die 'A running systemd manager is required.'
 }
 service_account_exists() {
   if [[ "$PLATFORM" == dsm ]]; then id -u modudock >/dev/null 2>&1; else getent passwd modudock >/dev/null; fi
@@ -180,7 +187,7 @@ prompt_admin() {
 }
 validate_existing_service() {
   local execution arguments value property data_count=0
-  execution=$(systemctl show modudock --property=ExecStart --value) || die 'Cannot inspect the existing service.'
+  execution=$(systemd_property ExecStart modudock) || die 'Cannot inspect the existing service.'
   [[ "$execution" == *"path=$INSTALL_DIR/modudock ;"* && "$execution" == *'argv[]='* ]] || die 'Existing service uses a different executable; migrate it manually before updating.'
   arguments=${execution#*'argv[]='}; arguments=${arguments%%' ;'*}
   [[ ${execution#*'argv[]='} != *'argv[]='* ]] || die 'Multiple service start commands are not supported.'
@@ -203,10 +210,10 @@ validate_existing_service() {
     esac
   done
   [[ $data_count == 1 ]] || die 'Existing service must name exactly one supported absolute data directory.'
-  [[ $(systemctl show modudock --property=User --value) == modudock ]] || die 'Existing service must run as the modudock account.'
-  [[ $(systemctl show modudock --property=Group --value) == modudock ]] || die 'Existing service must use the modudock group.'
+  [[ $(systemd_property User modudock) == modudock ]] || die 'Existing service must run as the modudock account.'
+  [[ $(systemd_property Group modudock) == modudock ]] || die 'Existing service must use the modudock group.'
   for property in RootDirectory RootImage BindPaths BindReadOnlyPaths TemporaryFileSystem; do
-    value=$(systemctl show modudock --property="$property" --value) || die 'Cannot inspect service filesystem settings.'
+    value=$(systemd_property "$property" modudock) || die 'Cannot inspect service filesystem settings.'
     [[ -z "$value" ]] || die "Unsupported service filesystem mapping: $property. Automatic update refused."
   done
 }
@@ -254,7 +261,7 @@ main() {
   (($# == 0)) || die 'Usage: install.sh (optional MODUDOCK_VERSION=vX.Y.Z and MODUDOCK_HEALTH_URL=http://127.0.0.1:7438).'
   [[ $(uname -s) == Linux ]] || die 'Linux only.'
   [[ $(id -u) == 0 ]] || die 'Run as root, for example curl ... | sudo bash.'
-  local command arch version new_install=0 account_exists=0
+  local command arch version load_state new_install=0 account_exists=0
   configure_platform
   for command in curl tar sha256sum awk uname mktemp install cp mv chmod chown flock systemctl cut date sleep grep id; do
     command -v "$command" >/dev/null || die "Required command is missing: $command"
@@ -278,7 +285,8 @@ main() {
   if ((new_install)); then prompt_admin; fi
   if service_account_exists; then account_exists=1; validate_service_account; fi
   if [[ "$PLATFORM" == dsm ]]; then ensure_dsm_group; verify_service_execution; prepare_native_root; fi
-  if [[ -f "$UNIT_FILE" || $(systemctl show modudock --property=LoadState --value) == loaded ]]; then
+  load_state=$(systemd_property LoadState modudock) || die 'Cannot inspect the existing service load state.'
+  if [[ -f "$UNIT_FILE" || "$load_state" == loaded ]]; then
     validate_existing_service
   fi
   [[ ! -d "$DATA_DIR" || $account_exists == 1 ]] || die 'Existing data has no modudock service account; migrate it manually before updating.'
@@ -310,7 +318,8 @@ main() {
     unset ADMIN_PASSWORD
   fi
   systemctl daemon-reload || die 'systemd daemon-reload failed.'
-  systemctl enable --now modudock || die 'systemd could not start ModuDock.'
+  systemctl enable modudock || die 'systemd could not enable ModuDock.'
+  systemctl start modudock || die 'systemd could not start ModuDock.'
   local attempt healthy=0
   for attempt in {1..15}; do
     if systemctl is-active --quiet modudock && as_service "$INSTALL_DIR/modudock" healthcheck --url "${MODUDOCK_HEALTH_URL:-http://127.0.0.1:7438}"; then healthy=1; break; fi

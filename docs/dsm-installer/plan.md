@@ -19,3 +19,9 @@ DSM 7.4.1 x86_64·kernel 5.10.55+에 맞는 네이티브 설치 분기를 추가
 
 ## 한계
 실제 DSM 설치·재부팅·공유 폴더 ACL·ARM 장비 실행은 아직 검증하지 않았다. SPK 패키지·방화벽·기존 Docker 데이터 이전·NAS 원격 자동 설치는 이번 범위가 아니다.
+
+## DSM systemctl 호환 오류 후속 수정
+- `scripts/test-install.sh`에서 실제 `check_systemd`를 실행하고, `--value`와 `--now`를 거부하는 구형 systemctl 대역으로 신규 설치·업데이트 실패를 먼저 재현한다.
+- `scripts/install.sh`의 모든 속성 조회는 `이름=값` 출력에서 정확한 이름 접두부만 제거한다. 조회 실패는 전파하고, 값 안의 등호와 구형 systemd에 없는 선택 속성의 빈 출력은 보존한다.
+- 서비스 활성화와 시작은 각각 `systemctl enable`과 `systemctl start`로 실행한다. 데이터 백업·전용 계정·기존 unit 보존은 변경하지 않는다.
+- Bash 문법, Linux/DSM 전체 설치 회귀 테스트와 독립 리뷰를 확인한 뒤 커밋·main 게시·CI를 검증한다. NAS 원격 설치나 새 릴리스는 실행하지 않는다.
