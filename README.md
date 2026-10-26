@@ -19,6 +19,8 @@ UI가 포함된 Go 실행파일 하나로 설치하는 자동화·플러그인 �
 
 상세 절차는 [설치·업데이트 안내](docs/installation.md)에 있습니다. 소스 저장소는 [colaiuta77/modudock](https://github.com/colaiuta77/modudock)이며, 실행파일과 Docker 이미지는 `v*` 릴리스 태그의 GitHub Actions가 성공한 뒤 제공됩니다.
 
+첫 공개 릴리스는 [v0.1.0](https://github.com/colaiuta77/modudock/releases/tag/v0.1.0)입니다. Linux amd64·arm64 아카이브와 SHA256SUMS를 제공합니다.
+
 ### Linux 네이티브 한 줄 설치
 
 systemd Linux amd64·arm64용입니다. **GitHub Releases에 실행파일과 SHA256SUMS가 발행된 후** 사용할 수 있습니다. 릴리스가 없으면 설치 파일을 바꾸지 않고 중단합니다.

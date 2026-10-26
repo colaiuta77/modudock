@@ -10,3 +10,8 @@
 - 리뷰 수정. root로 core.lock을 열거나 chown하지 않고, 서비스 계정의 잠금 도우미를 유지한 채 전체 데이터를 복사한다. 서비스 중지 후 경로를 재검사한다. 실제 systemd ExecStart/User/Group 및 파일시스템 매핑을 검사해 고정 지원 경로가 아니면 서비스 중지 전 거부한다.
 - 설치 테스트는 WSL Ubuntu-22.04의 임시 경로와 명령 대역을 사용한다. 실제 root 계정/서비스 변경은 하지 않았다. 터미널 없는 최초 설치, 비밀번호 로그 부재, 실제 flock 경합, 백업 실패, 링크 교체, 다른 데이터 경로를 검증했다.
 - Go 전체 테스트/vet, 프론트 48개 테스트와 build, 라이선스 고지 생성(279 sections)이 통과했다.
+- 게시. 원격 main 8595294를 조상으로 보존한 정상 push로 코드 45cd852를 게시했다. 원격 install.sh blob e6faff0d1b4d98f3d31b09fa9c720f6f8624a962가 로컬과 일치했다. 원격 LICENSE blob 0ad25db4bd1d86c452db3f9602ccdbe172438f52도 그대로 보존했다.
+- v0.1.0 태그를 45cd852에 발행했다. Actions run 40266130545가 검증·5종 바이너리·공개 Release·GHCR linux/amd64,linux/arm64 게시까지 success로 종료했다. 이미지 태그는 0.1.0/0.1/latest이며 digest는 sha256:f9626eb7b80db4032262dad3c6f9d46c60e5d9c3af79c975c11914ff236bd270이다.
+- 실제 배포 검증. 공개 Release의 Linux amd64·arm64 아카이브를 내려받아 SHA256SUMS와 모두 일치했다. LICENSE·service·install.sh·라이선스 고지 포함을 확인했다. Windows의 인증 없는 HTTPS 체크섬 다운로드가 HTTP 200이었다.
+- 내려받은 Linux amd64 실행파일 v0.1.0을 WSL localhost 임시 데이터로 실행해 관리자 생성·healthcheck·내장 UI·실제 로그인에 성공했다. 별도 로컬 빌드에서도 비인증 API 차단과 AGPL 고지를 확인했다. 테스트 프로세스와 임시 데이터는 정리했다.
+- 검증 한계. WSL 외부 github.com DNS 조회가 제한되어 WSL 안의 익명 릴리스 검색은 수행하지 못했고 Windows HTTPS로 공개 접근을 확인했다. 실제 root/systemd 호스트 설치·ARM64 실기기 실행·NAS 배포·GHCR 익명 pull은 확인하지 않았다. 비systemd WSL에서 파이프 실행은 설치 파일 변경 전 명확한 안내로 중단되는 것을 확인했다.
