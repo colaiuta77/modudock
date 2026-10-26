@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const parts = ["ModuDock Go — Third-party notices\nGenerated from the installed runtime dependency versions and Tailwind CSS.\n"];
+parts.push("ModuDock Go — GNU AGPL-3.0\nSource: https://github.com/colaiuta77/modudock\n", await readFile(join(root, "LICENSE"), "utf8"));
 async function append(name, directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = entries.filter(e => e.isFile() && /^(licen[sc]e|copying|notice)([.-]|$)/i.test(e.name));

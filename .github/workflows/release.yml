@@ -29,6 +29,7 @@ jobs:
           go-version: 1.27.3
       - run: go test -race ./...
       - run: go vet ./...
+      - run: bash -n scripts/install.sh scripts/test-install.sh && bash scripts/test-install.sh
       - run: npm ci && npm test && npm audit --audit-level=high
         working-directory: frontend
       - run: sh scripts/build.sh
@@ -73,7 +74,8 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           MODUDOCK_VERSION: ${{ github.ref_name }}
       - run: |
-          cp README.md dist/
+          cp README.md LICENSE dist/
+          cp scripts/install.sh dist/
           cp -r docs packaging dist/
           tar -czf modudock-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C dist .
       - uses: actions/upload-artifact@v7.0.2

@@ -17,7 +17,17 @@ UI가 포함된 Go 실행파일 하나로 설치하는 자동화·플러그인 �
 
 ## 시작
 
-상세 절차는 [설치·업데이트 안내](docs/installation.md)에 있습니다. 현재는 로컬 개발본이며 GitHub 이미지나 실행파일을 원격 배포하지 않았습니다.
+상세 절차는 [설치·업데이트 안내](docs/installation.md)에 있습니다. 소스 저장소는 [colaiuta77/modudock](https://github.com/colaiuta77/modudock)이며, 실행파일과 Docker 이미지는 `v*` 릴리스 태그의 GitHub Actions가 성공한 뒤 제공됩니다.
+
+### Linux 네이티브 한 줄 설치
+
+systemd Linux amd64·arm64용입니다. **GitHub Releases에 실행파일과 SHA256SUMS가 발행된 후** 사용할 수 있습니다. 릴리스가 없으면 설치 파일을 바꾸지 않고 중단합니다.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/colaiuta77/modudock/main/scripts/install.sh | sudo bash
+```
+
+첫 설치 때 SSH 터미널에서 관리자 이름과 비밀번호를 입력합니다. 기본 접속은 `http://127.0.0.1:7438`이며 외부 공개는 별도 HTTPS 프록시 설정이 필요합니다. 재실행은 기존 계정·데이터·서비스 설정을 보존하며 업데이트합니다. Synology DSM은 이 systemd 설치 대상이 아닙니다.
 
 개발 소스에서 Docker 이미지를 만들고 처음 실행하는 예입니다.
 
@@ -64,6 +74,6 @@ node scripts/smoke.mjs dist/modudock-linux-amd64
 
 ## 라이선스와 배포
 
-제3자 라이선스는 빌드 시 실제 의존성에서 수집하여 `/third-party-notices.txt`와 배포 파일에 포함합니다. 이 프로젝트 자체의 공개 라이선스는 소유자가 공개 전에 선택해야 합니다.
+이 프로젝트는 저장소의 [GNU AGPL-3.0 LICENSE](LICENSE)를 따릅니다. 제3자 라이선스는 빌드 시 실제 의존성에서 수집하여 `/third-party-notices.txt`와 배포 파일에 포함합니다.
 
-GitHub Actions는 PR/개발 브랜치를 검증하고 `v*` 태그에서 실행파일과 GHCR 이미지를 발행하도록 구성했습니다. 저장소 연결·원격 실행·NAS 업로드는 별도 요청 후 진행합니다.
+GitHub Actions는 main/PR/개발 브랜치를 검증하고 `v*` 태그에서 실행파일과 GHCR 이미지를 발행합니다. 소스 push만으로는 릴리스 파일이 생성되지 않습니다. NAS 업로드·설치는 별도 작업입니다.

@@ -723,6 +723,9 @@ function Console({
         </main>
         <footer className="page-footer">
           <span>ModuDock Go</span>
+          <a href="https://github.com/colaiuta77/modudock" target="_blank" rel="noreferrer">
+            소스 코드
+          </a>
           <a href="/third-party-notices.txt" target="_blank" rel="noreferrer">
             오픈소스 라이선스
           </a>
